@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+bun.lockb
+
+# Local Python environments
+.venv/
+.venv-td/
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+*.log
+.devserver.pid
+.tunnel.pid
+.tunnel.log
+.devserver.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+.cache/
+
+# Local evaluation data. Never commit VizWiz images, ASL Citizen clips, or MS-ASL video.
+data/vizwiz/
+data/asl-citizen/
+data/ms-asl/
+
+# Derived ASL Citizen data stays local. README.md is the only tracked file.
+# See docs/DATA_LICENSES.md (Decisions).
+data/sign-samples/**
+!data/sign-samples/**/
+!data/sign-samples/**/README.md
+data/sign-samples-archive/**
+!data/sign-samples-archive/**/
+!data/sign-samples-archive/**/README.md
+data/sign-reports/**
+!data/sign-reports/**/
+!data/sign-reports/**/README.md
+data/landmarks/**
+!data/landmarks/**/
+!data/landmarks/**/README.md
+models/sign/**
+!models/sign/**/
+!models/sign/**/README.md

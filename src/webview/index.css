@@ -1,0 +1,69 @@
+@import "./globals.css";
+
+@layer base {
+  :root {
+    font-family: 'Geist Mono', 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Courier New', monospace;
+  }
+
+  body {
+    @apply min-w-[320px] min-h-screen relative m-0 bg-background text-foreground;
+    -webkit-font-smoothing: auto;
+  }
+}
+
+/* Neobrutalist pulse — hard blink, no easing */
+@keyframes cli-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Hard shadow shift instead of glow */
+@keyframes neo-shift {
+  0%, 100% { box-shadow: 6px 6px 0 #000000; }
+  50% { box-shadow: 4px 4px 0 #FF6600; }
+}
+
+.cli-pulse {
+  animation: cli-pulse 1s steps(2) infinite;
+}
+
+.cli-glow {
+  animation: neo-shift 2s steps(2) infinite;
+}
+
+/* Swipe-to-delete */
+.translation-card {
+  transition: transform 0.15s steps(3), opacity 0.15s steps(3);
+  will-change: transform, opacity;
+  touch-action: pan-y;
+}
+
+.translation-card.swiping-out {
+  transform: translateX(110%);
+  opacity: 0;
+  transition: transform 0.2s steps(3), opacity 0.2s steps(3);
+}
+
+/* Scrollbar — neobrutalist */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #ffffff;
+  border-left: 4px solid #000000;
+}
+::-webkit-scrollbar-thumb {
+  background: #FF6600;
+  border: 2px solid #000000;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #cc00cc;
+}
+
+@media (prefers-reduced-motion) {
+  *,
+  ::before,
+  ::after {
+    animation: none !important;
+  }
+}

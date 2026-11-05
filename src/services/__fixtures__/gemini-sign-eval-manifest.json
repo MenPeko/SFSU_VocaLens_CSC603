@@ -1,0 +1,53 @@
+{
+  "description": "Representative captured sign sequences for manual Gemini PNG skeleton regression review.",
+  "samples": [
+    {
+      "label": "again",
+      "samplePath": "../../../data/sign-samples/again/1776199485363_ile5bk.json"
+    },
+    {
+      "label": "again",
+      "samplePath": "../../../data/sign-samples/again/1776199490789_fjoo81.json"
+    },
+    {
+      "label": "help",
+      "samplePath": "../../../data/sign-samples/help/1776197918511_4qp7ze.json"
+    },
+    {
+      "label": "no",
+      "samplePath": "../../../data/sign-samples/no/1776198750016_st4odq.json"
+    },
+    {
+      "label": "no",
+      "samplePath": "../../../data/sign-samples/no/1776198756118_p87qw3.json"
+    },
+    {
+      "label": "please",
+      "samplePath": "../../../data/sign-samples/please/1776200245493_fcxgjx.json"
+    },
+    {
+      "label": "stop",
+      "samplePath": "../../../data/sign-samples/stop/1776199137053_7pr2kd.json"
+    },
+    {
+      "label": "stop",
+      "samplePath": "../../../data/sign-samples/stop/1776199142451_k931uw.json"
+    },
+    {
+      "label": "thank_you",
+      "samplePath": "../../../data/sign-samples/thank_you/1776199813917_ltormf.json"
+    },
+    {
+      "label": "wait",
+      "samplePath": "../../../data/sign-samples/wait/1776197409777_2tvbo2.json"
+    },
+    {
+      "label": "yes",
+      "samplePath": "../../../data/sign-samples/yes/1776198318289_k67qrw.json"
+    },
+    {
+      "label": "yes",
+      "samplePath": "../../../data/sign-samples/yes/1776198332169_u8ms71.json"
+    }
+  ]
+}

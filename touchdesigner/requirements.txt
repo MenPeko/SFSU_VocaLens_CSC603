@@ -1,0 +1,12 @@
+# mediapipe 0.10.15+ dropped the legacy `solutions.holistic` module from the
+# published wheels. Pin to 0.10.14, which is the newest release that still
+# ships Holistic — and which is what `touchdesigner/tracking/*` uses.
+mediapipe==0.10.14
+opencv-python>=4.9,<5
+python-osc>=1.8,<2
+numpy>=1.26,<3
+pydantic>=2.5,<3
+
+# Optional — only needed if you enable --websocket broadcasting for a
+# web-side debugger or second consumer.
+websockets>=12,<14

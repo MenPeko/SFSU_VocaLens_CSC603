@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Vision pipeline — live viewer</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #05070b;
+    --panel: #0b1018;
+    --panel-2: #10161f;
+    --fg: #e7edf5;
+    --muted: #7b8698;
+    --accent: #1e90ff;
+    --good: #22c55e;
+    --warn: #f59e0b;
+    --bad: #ef4444;
+    --mono: "SFMono-Regular", "Geist Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.4 system-ui, -apple-system, sans-serif;
+    height: 100%;
+  }
+  header {
+    padding: 10px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #1a2130; background: #080c12;
+  }
+  header h1 { font-size: 13px; margin: 0; font-weight: 600; letter-spacing: 0.02em; }
+  header .meta { font-family: var(--mono); color: var(--muted); font-size: 11px; }
+  header .meta b { color: var(--fg); font-weight: 500; }
+  #conn-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background: var(--bad); margin-right:6px; vertical-align: 1px; }
+  #conn-dot.on { background: var(--good); }
+  main {
+    display: grid;
+    grid-template-columns: 1.1fr 1.1fr 320px;
+    gap: 12px;
+    padding: 12px;
+    height: calc(100% - 44px);
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid #141b26;
+    border-radius: 8px;
+    padding: 10px 12px;
+    overflow: auto;
+  }
+  .panel h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin: 0 0 8px; font-weight: 600;
+  }
+  .hand {
+    margin-bottom: 14px; padding: 8px; border-radius: 6px; background: var(--panel-2);
+    transition: border-color 150ms;
+    border: 1px solid transparent;
+  }
+  .hand.present { border-color: #1a3a66; }
+  .hand .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .hand .title { font-weight: 600; font-size: 12px; }
+  .hand .gesture {
+    font-family: var(--mono); font-size: 11px; padding: 2px 8px;
+    background: #16202f; border-radius: 4px; color: var(--muted);
+  }
+  .hand.present .gesture { color: var(--accent); background: #0e2944; }
+  .row { display: grid; grid-template-columns: 90px 1fr 54px; gap: 8px; align-items: center; margin: 4px 0; }
+  .row .k { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .row .v { font-family: var(--mono); text-align: right; font-size: 11px; color: var(--fg); }
+  .bar { height: 6px; background: #121a26; border-radius: 3px; overflow: hidden; position: relative; }
+  .bar > span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width 80ms linear; }
+  .bar.pinch > span { background: var(--warn); }
+  .pulse { display:inline-block; width:10px; height:10px; border-radius:50%; background:#2a3344; margin-right:8px; vertical-align:-1px; transition: background 80ms; }
+  .pulse.on { background: var(--good); }
+  .pulse.pinch { background: var(--warn); }
+  #stage-wrap { display:flex; flex-direction:column; }
+  #stage { width: 100%; aspect-ratio: 16/9; background: #04080e; border-radius: 6px; display:block; }
+  #stage-legend { display:flex; gap: 12px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+  #stage-legend .sw { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+  #session {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px; border-radius: 6px; background: var(--panel-2); margin-bottom: 10px;
+    border: 1px solid transparent; transition: border-color 150ms, background 150ms;
+  }
+  #session.active { border-color: #0f3d20; background: #0a1b12; }
+  #session .label { font-weight: 600; font-size: 12px; }
+  #session .dur { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  #events { font-family: var(--mono); font-size: 11px; height: 160px; overflow: auto; background: var(--panel-2); border-radius: 6px; padding: 8px; }
+  #events .evt { color: var(--muted); }
+  #events .evt b { color: var(--accent); font-weight: 500; }
+  #events .evt .t { color: #4b586c; margin-right: 6px; }
+  .mini { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .mini .card { background: var(--panel-2); border-radius: 4px; padding: 6px 8px; }
+  .mini .card .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .mini .card .v { font-family: var(--mono); font-size: 14px; color: var(--fg); margin-top: 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span id="conn-dot"></span>Vision pipeline — live viewer</h1>
+  <div class="meta">
+    <span>fps: <b id="m-fps">—</b></span> &middot;
+    <span>frame: <b id="m-frame">—</b></span> &middot;
+    <span>dropped: <b id="m-drop">—</b></span> &middot;
+    <span>ws: <b id="m-ws">connecting…</b></span>
+  </div>
+</header>
+<main>
+  <section class="panel" id="hands-panel">
+    <h2>Hands</h2>
+    <div class="hand" id="hand-left">
+      <div class="header"><div class="title"><span class="pulse"></span>Left</div><div class="gesture">none</div></div>
+      <div class="row"><div class="k">openness</div><div class="bar"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">palm_facing</div><div class="bar"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">extended</div><div class="bar"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">pinch_dist</div><div class="bar pinch"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">pinch</div><div class="pulse"></div><div class="v">off</div></div>
+      <div class="mini">
+        <div class="card"><div class="k">wrist x</div><div class="v" data-k="wx">—</div></div>
+        <div class="card"><div class="k">wrist y</div><div class="v" data-k="wy">—</div></div>
+        <div class="card"><div class="k">vel x</div><div class="v" data-k="vx">—</div></div>
+        <div class="card"><div class="k">vel y</div><div class="v" data-k="vy">—</div></div>
+      </div>
+    </div>
+    <div class="hand" id="hand-right">
+      <div class="header"><div class="title"><span class="pulse"></span>Right</div><div class="gesture">none</div></div>
+      <div class="row"><div class="k">openness</div><div class="bar"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">palm_facing</div><div class="bar"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">extended</div><div class="bar"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">pinch_dist</div><div class="bar pinch"><span></span></div><div class="v">0.00</div></div>
+      <div class="row"><div class="k">pinch</div><div class="pulse"></div><div class="v">off</div></div>
+      <div class="mini">
+        <div class="card"><div class="k">wrist x</div><div class="v" data-k="wx">—</div></div>
+        <div class="card"><div class="k">wrist y</div><div class="v" data-k="wy">—</div></div>
+        <div class="card"><div class="k">vel x</div><div class="v" data-k="vx">—</div></div>
+        <div class="card"><div class="k">vel y</div><div class="v" data-k="vy">—</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="stage-wrap">
+    <h2>Image-space positions</h2>
+    <canvas id="stage" width="1280" height="720"></canvas>
+    <div id="stage-legend">
+      <span><span class="sw" style="background:#1e90ff"></span>left wrist</span>
+      <span><span class="sw" style="background:#ff6600"></span>right wrist</span>
+      <span><span class="sw" style="background:#22c55e"></span>shoulder center</span>
+    </div>
+    <div class="mini" style="grid-template-columns: repeat(3, 1fr);">
+      <div class="card"><div class="k">shoulder_cx</div><div class="v" id="m-scx">—</div></div>
+      <div class="card"><div class="k">shoulder_cy</div><div class="v" id="m-scy">—</div></div>
+      <div class="card"><div class="k">shoulder_w</div><div class="v" id="m-sw">—</div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Session + events</h2>
+    <div id="session"><div class="label">idle</div><div class="dur">0 ms</div></div>
+    <div id="events"></div>
+    <h2 style="margin-top:12px;">Face</h2>
+    <div class="row"><div class="k">present</div><div class="pulse" id="face-pulse"></div><div class="v" id="face-present">no</div></div>
+    <div class="row"><div class="k">mouth_open</div><div class="bar"><span id="face-mouth-bar"></span></div><div class="v" id="face-mouth-v">0.00</div></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const connDot = document.getElementById("conn-dot");
+  const mFps = document.getElementById("m-fps");
+  const mFrame = document.getElementById("m-frame");
+  const mDrop = document.getElementById("m-drop");
+  const mWs = document.getElementById("m-ws");
+
+  const session = document.getElementById("session");
+  const events = document.getElementById("events");
+  const facePulse = document.getElementById("face-pulse");
+  const facePresent = document.getElementById("face-present");
+  const faceBar = document.getElementById("face-mouth-bar");
+  const faceV = document.getElementById("face-mouth-v");
+
+  const stage = document.getElementById("stage");
+  const ctx = stage.getContext("2d");
+
+  // trail buffers
+  const trails = { left: [], right: [] };
+  const TRAIL_MAX = 40;
+
+  const hands = {
+    left: wireHand("hand-left"),
+    right: wireHand("hand-right"),
+  };
+
+  function wireHand(id) {
+    const root = document.getElementById(id);
+    const pulse = root.querySelector(".header .pulse");
+    const gesture = root.querySelector(".header .gesture");
+    const rows = root.querySelectorAll(".row");
+    const map = {};
+    rows.forEach((r) => {
+      const k = r.querySelector(".k").textContent.trim();
+      map[k] = {
+        bar: r.querySelector(".bar > span"),
+        pulse: r.querySelector(".pulse"),
+        v: r.querySelector(".v"),
+      };
+    });
+    const mini = {};
+    root.querySelectorAll(".card .v[data-k]").forEach((el) => {
+      mini[el.dataset.k] = el;
+    });
+    return { root, pulse, gesture, map, mini };
+  }
+
+  function fmt(x, p = 2) {
+    if (x === null || x === undefined || Number.isNaN(x)) return "—";
+    return Number(x).toFixed(p);
+  }
+
+  function addEvent(label) {
+    const d = new Date();
+    const t = d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+    const div = document.createElement("div");
+    div.className = "evt";
+    div.innerHTML = `<span class="t">${t}</span><b>${label}</b>`;
+    events.prepend(div);
+    while (events.childElementCount > 80) events.removeChild(events.lastChild);
+  }
+
+  function drawStage(s) {
+    const w = stage.width, h = stage.height;
+    // fade previous frame for a trail effect
+    ctx.fillStyle = "rgba(4, 8, 14, 0.25)";
+    ctx.fillRect(0, 0, w, h);
+
+    function addTrail(side, hand) {
+      if (!hand.present) { trails[side] = []; return; }
+      trails[side].push({ x: hand.raw_wrist_x * w, y: hand.raw_wrist_y * h });
+      if (trails[side].length > TRAIL_MAX) trails[side].shift();
+    }
+    addTrail("left", s.left);
+    addTrail("right", s.right);
+
+    function drawTrail(points, color) {
+      if (points.length < 2) return;
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      points.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.stroke();
+    }
+    drawTrail(trails.left, "rgba(30,144,255,0.9)");
+    drawTrail(trails.right, "rgba(255,102,0,0.9)");
+
+    function dot(x, y, r, color) {
+      ctx.beginPath();
+      ctx.fillStyle = color;
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (s.left.present) dot(s.left.raw_wrist_x * w, s.left.raw_wrist_y * h, 9, "#1e90ff");
+    if (s.right.present) dot(s.right.raw_wrist_x * w, s.right.raw_wrist_y * h, 9, "#ff6600");
+    if (s.shoulder_width > 0) dot(s.shoulder_center_x * w, s.shoulder_center_y * h, 7, "#22c55e");
+  }
+
+  function applyHand(side, hand) {
+    const h = hands[side];
+    h.root.classList.toggle("present", !!hand.present);
+    h.pulse.classList.toggle("on", !!hand.present);
+    h.gesture.textContent = hand.gesture || "none";
+
+    function set(k, val, max = 1, pct = (v) => Math.max(0, Math.min(100, v * 100))) {
+      const m = h.map[k];
+      if (!m) return;
+      if (m.bar) m.bar.style.width = pct(val) + "%";
+      if (m.v) m.v.textContent = fmt(val, 2);
+    }
+    set("openness", hand.openness || 0);
+    set("palm_facing", hand.palm_facing || 0);
+    set("extended", hand.extended_count || 0);
+    // pinch_distance is 0..~0.4 — invert so bar grows as fingers close
+    const pd = hand.pinch_distance || 0;
+    const barPct = Math.max(0, Math.min(100, (1 - pd / 0.3) * 100));
+    const pinchRow = h.map["pinch_dist"];
+    if (pinchRow) {
+      pinchRow.bar.style.width = barPct + "%";
+      pinchRow.v.textContent = fmt(pd, 2);
+    }
+    const pinch = h.map["pinch"];
+    if (pinch) {
+      pinch.pulse.classList.toggle("pinch", !!hand.pinch_state);
+      pinch.v.textContent = hand.pinch_state ? "ON" : "off";
+    }
+    h.mini.wx.textContent = fmt(hand.wrist_x, 2);
+    h.mini.wy.textContent = fmt(hand.wrist_y, 2);
+    h.mini.vx.textContent = fmt(hand.wrist_vx, 2);
+    h.mini.vy.textContent = fmt(hand.wrist_vy, 2);
+  }
+
+  function apply(s) {
+    mFps.textContent = fmt(s.fps, 1);
+    mFrame.textContent = String(s.frame_index);
+    mDrop.textContent = String(s.dropped_frames);
+
+    applyHand("left", s.left);
+    applyHand("right", s.right);
+
+    document.getElementById("m-scx").textContent = fmt(s.shoulder_center_x, 3);
+    document.getElementById("m-scy").textContent = fmt(s.shoulder_center_y, 3);
+    document.getElementById("m-sw").textContent = fmt(s.shoulder_width, 3);
+
+    session.classList.toggle("active", !!s.session.active);
+    session.querySelector(".label").textContent = s.session.active ? "SESSION ACTIVE" : "idle";
+    session.querySelector(".dur").textContent = `${s.session.duration_ms} ms`;
+    if (s.session.started) addEvent("session started");
+    if (s.session.ended) addEvent("session ended");
+
+    facePulse.classList.toggle("on", !!s.face.present);
+    facePresent.textContent = s.face.present ? "yes" : "no";
+    faceBar.style.width = Math.max(0, Math.min(100, (s.face.mouth_open || 0) * 100)) + "%";
+    faceV.textContent = fmt(s.face.mouth_open, 2);
+
+    drawStage(s);
+  }
+
+  async function connect() {
+    let wsPort;
+    try {
+      const resp = await fetch("/ws-port");
+      wsPort = Number(await resp.text());
+    } catch (e) {
+      mWs.textContent = "ws-port lookup failed";
+      setTimeout(connect, 1000);
+      return;
+    }
+    const url = `ws://${location.hostname}:${wsPort}`;
+    mWs.textContent = url;
+    const sock = new WebSocket(url);
+    sock.onopen = () => { connDot.classList.add("on"); mWs.textContent = `${url} ✓`; };
+    sock.onclose = () => {
+      connDot.classList.remove("on");
+      mWs.textContent = "disconnected — retrying…";
+      setTimeout(connect, 1000);
+    };
+    sock.onerror = () => { /* onclose will fire */ };
+    sock.onmessage = (e) => {
+      try { apply(JSON.parse(e.data)); } catch (err) { /* ignore malformed */ }
+    };
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+fastapi>=0.115,<1
+uvicorn>=0.32,<1
+
+# MediaPipe is intentionally NOT a runtime dep of this classifier service —
+# extraction happens on the JS side in the webview (see @mediapipe/holistic in
+# package.json). When Track A.3 introduces Python-side video re-extraction for
+# external datasets (WLASL, MS-ASL), pin the exact Python mediapipe version in
+# a separate requirements-extractor.txt and record that version in every
+# emitted sample's `extractorVersion` field. The current JS extractor id is
+# defined in src/sign/extractor-version.ts and sign_classifier_service/extractor_version.py.

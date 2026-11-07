@@ -58,6 +58,20 @@ class TrainingExample:
     # through so that `train.build_artifact` can refuse to train on a mixed
     # set (see M1 task 2 in DEVELOPMENT_ROADMAP.md).
     extractor_version: str
+    # Provenance used by the held-out evaluation (docs/SIGN_EVAL_PLAN.md).
+    # Empty for legacy flat-layout samples, which carry no session or signer.
+    dataset: str = "own"
+    signer_id: str = ""
+    session_id: str = ""
+    source_video_id: str = ""
+
+    @property
+    def group_key(self) -> str:
+        """Unit that a split may never cut through: a session for own
+        recordings, a participant for public datasets. Empty when unknown."""
+        if self.dataset == "own":
+            return f"own:{self.session_id}" if self.session_id else ""
+        return f"{self.dataset}:{self.signer_id}" if self.signer_id else ""
 
 
 @dataclass
@@ -509,6 +523,8 @@ def load_training_examples(data_dir: Path) -> list[TrainingExample]:
                         sample_path=sample_path,
                         vector=vectorize_sequence(frames),
                         extractor_version=extractor_value.strip(),
+                        signer_id=str(sample_data.get("signer") or ""),
+                        session_id=str(sample_data.get("sessionId") or ""),
                     )
                 )
             except Exception:

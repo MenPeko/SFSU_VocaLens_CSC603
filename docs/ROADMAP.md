@@ -28,8 +28,8 @@ A coding week may add a harness that *stores* human grades or timings. It must n
 
 ### Data and secrets stay out of the repository
 
-- Do not commit VizWiz images, ASL Citizen clips, MS-ASL video, or local sign recordings.
-- Keep that data on the machine that runs the evaluation. `data/vizwiz/`, `data/asl-citizen/`, and `data/ms-asl/` are listed in `.gitignore`.
+- Do not commit VizWiz images, ASL Citizen clips, MS-ASL or Kaggle video, or local sign recordings.
+- Keep that data on the machine that runs the evaluation. `data/vizwiz/`, `data/asl-citizen/`, `data/ms-asl/`, and `data/kaggle/` are listed in `.gitignore`.
 - Put API keys in `.env`. That file is already listed in `.gitignore`. The Gemini client reads `GEMINI_API_KEY` from the environment. Do not hard-code a key, copy `.env` into an example file, or commit a key in source, tests, or logs.
 
 ### Extend the running app
@@ -48,6 +48,8 @@ The phone page is the Written Text mode of `src/webview/App.tsx` (`AppMode` `"wh
 There is no Whisper call in the repo yet. Add it on this path. Do not add a VocaLens route under `sign_classifier_service/`.
 
 ### Open confirmation
+
+**Update, November 5, 2026:** the team confirmed the sign-classifier evaluation is in scope. That work follows `docs/SIGN_EVAL_PLAN.md`: held-out test sets, leak checks, ASL Citizen extraction with the app's own extractor, and the baseline-plus-one-dataset loop. Additional datasets (MS-ASL, Kaggle) may be added one at a time. Each one is added only after it passes these checks: it is isolated-sign video (no static fingerspelling images), it has a gloss mapping in `gloss_map.json`, it has signer IDs or a documented workaround, it passes a duplicate check against existing data, and a kept or dropped decision is made from accuracy on the owner's own held-out test session. The course instructor approved any datasets for this academic, non-commercial project. Raw data, landmarks, and weights still stay out of the repository. The full rule is in `docs/DATA_LICENSES.md` (Decisions). Live Sign behavior and the promoted model in `data/sign-models/active-model.json` are unchanged by that plan. The rest of this note still applies to any other sign-mode change.
 
 **Sign mode is out of scope until the team says otherwise.** The roadmap below still describes an eight-sign classifier and ASL Citizen, because that is the team plan. Those paragraphs are not a coding assignment.
 
@@ -70,7 +72,7 @@ Do not reopen these. They replace the new-server design in the original proposal
 - The phone a person holds is an iPhone 13. The lab camera is a Fujifilm X-T30 on a tripod, powered by a CP-W126 dummy battery and an AC adapter, connected by Micro-HDMI to a USB capture card. The app selects that card like any other video device. The X-T30 comes after the phone path already speaks an answer.
 - Visual answers stay on the Gemini client in `src/services/gemini-ocr.ts`. In Week 4 the team may score one other hosted vision model on 30 training images. Gemini remains the demo model unless that model is clearly better on both accuracy and latency.
 - The first prompt asks for a short answer, reads visible text word for word, and says when the image is unclear.
-- VizWiz and ASL Citizen are separate. Improvement on one does not count as improvement on the other. Static fingerspelling collections are not used. MS-ASL fills a gloss only when ASL Citizen does not contain it, and only after the sign classifier is confirmed in scope.
+- VizWiz and ASL Citizen are separate. Improvement on one does not count as improvement on the other. Static fingerspelling collections are not used. Other sign datasets (MS-ASL, Kaggle) are added one at a time, each only after it passes the checks in `docs/DATA_LICENSES.md` (Decisions).
 
 ## Purpose
 
@@ -104,7 +106,7 @@ The running app already captures a camera frame, sends it to Gemini, speaks the 
 
 **VizWiz** improves the visual answers. The training split is for finding errors and editing the prompt. Errors are grouped into invented text, the wrong object, an answer given for an unreadable photo, and a refusal when the answer is visible. The prompt is revised from those patterns. A 200-question validation sample is graded once, after the prompt is frozen. Those images stay on local machines and out of the repository. Hand grading is a people task.
 
-**ASL Citizen** improves the sign classifier. This dataset work is on hold with the rest of the sign mode. When the team confirms it, the plan is: keep only clips whose English gloss is one of the eight signs, run them through the same MediaPipe extractor the app uses, and train one model on local recordings and one model on local recordings plus those clips. Both are scored on recordings from the team's own camera that were held out of training. MS-ASL fills a gloss only when ASL Citizen does not contain it. Static fingerspelling collections do not match this model, so they are not used.
+**ASL Citizen** improves the sign classifier. This dataset work is on hold with the rest of the sign mode. When the team confirms it, the plan is: keep only clips whose English gloss is one of the eight signs, run them through the same MediaPipe extractor the app uses, and train one model on local recordings and one model on local recordings plus those clips. Both are scored on recordings from the team's own camera that were held out of training. Other datasets (MS-ASL, Kaggle) may each be added after ASL Citizen, one at a time, under the checks in `docs/DATA_LICENSES.md` (Decisions). Static fingerspelling collections do not match this model, so they are not used.
 
 VizWiz and ASL Citizen are reported separately. Improvement on one does not count as improvement on the other.
 

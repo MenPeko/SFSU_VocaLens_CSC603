@@ -72,6 +72,40 @@ Recommended flow:
 
 The evaluator prints the active runtime metadata, overall accuracy, and a confusion matrix.
 
+## Held-Out Evaluation (baseline vs. public data)
+
+The plan is in `docs/SIGN_EVAL_PLAN.md`. Code lives in `sign_classifier_service/eval/`. Only schema-v2 samples recorded into a session are used.
+
+1. Create a session before recording, then start the app with that session active:
+
+   ```bash
+   .venv/bin/python -m sign_classifier_service.eval.sessions new --role train --signer owner --lighting desk-daylight --camera iphone13
+   SIGN_TRAINING_SESSION=<sessionId> bun run dev
+   ```
+
+   Test sessions use `--role test`, and their IDs must also be added to `sign_classifier_service/eval/test_sessions.json`. `sessions list` prints every session with its role and clip counts.
+
+   Every run also needs at least one validation session (`--role validation --signer owner`). Its clips are never trained on or tested on. They drive early stopping (validation loss, patience set in `eval/config.json`), and the runner keeps the best epoch's weights. A validation session must not share both day and lighting with any test session. With no validation session, the runner stops; it never falls back to the test sets. Test sets are scored once, after training finishes.
+
+2. ASL Citizen (optional, after unpacking under `data/asl-citizen/`):
+
+   ```bash
+   .venv/bin/python -m sign_classifier_service.eval.asl_citizen glosses        # review gloss variants, then edit eval/gloss_map.json
+   .venv/bin/python -m sign_classifier_service.eval.asl_citizen filter         # writes data/sign-eval/asl-citizen-filtered.csv
+   .venv/bin/python -m sign_classifier_service.eval.asl_citizen select-test-signers
+   bun run sign:eval-extract                                                  # headless Chromium, same extractor as the app
+   ```
+
+3. Run experiments and refresh the summary:
+
+   ```bash
+   bun run sign:eval-run -- --experiment baseline
+   bun run sign:eval-run -- --experiment plus-asl-citizen
+   bun run sign:eval-summarize
+   ```
+
+Each run writes `data/sign-reports/eval/<runId>/` (gitignored) and a model under `models/sign/` (gitignored). It never changes `data/sign-models/active-model.json`. Any leak check failure aborts the run before training.
+
 ## Snapshot A Report
 
 Write a self-contained report folder that tracks validation accuracy, full-dataset evaluation, spot checks, and grouped misclassified samples:

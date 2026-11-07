@@ -1,0 +1,17 @@
+{
+  "classes": ["wait", "help", "yes", "no", "stop", "again", "thank_you", "please"],
+  "notes": "Keys are each dataset's label strings exactly as they appear in its files. Unlisted labels are dropped and counted. Fill asl-citizen from `python -m sign_classifier_service.eval.asl_citizen glosses` after reviewing the variants it prints.",
+  "datasets": {
+    "own": {
+      "wait": "wait",
+      "help": "help",
+      "yes": "yes",
+      "no": "no",
+      "stop": "stop",
+      "again": "again",
+      "thank_you": "thank_you",
+      "please": "please"
+    },
+    "asl-citizen": {}
+  }
+}

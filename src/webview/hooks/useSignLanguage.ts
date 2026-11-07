@@ -76,6 +76,18 @@ interface DetectedHand {
 
 const EXPECTED_HAND_LANDMARK_COUNT = 21
 
+// Shared with the offline video extractor (scripts/sign-extract/page.ts) so
+// dataset clips are landmarked exactly like live captures. Changing a value
+// here changes the extractor and needs a +schema-v<n> bump.
+export const HOLISTIC_OPTIONS = {
+  selfieMode: false,
+  modelComplexity: DEFAULT_SIGN_CAPTURE_SETTINGS.holisticModelComplexity,
+  smoothLandmarks: true,
+  refineFaceLandmarks: true,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.65,
+} as const
+
 export interface HolisticFrameDrawingData {
   poseLandmarks: NormalizedLandmarkList
   faceLandmarks: NormalizedLandmarkList
@@ -846,7 +858,7 @@ export function estimateGestureHints(hands: DetectedHand[]): GestureHint[] {
     }))
 }
 
-function buildDetectedHands(results: Results): DetectedHand[] {
+export function buildDetectedHands(results: Results): DetectedHand[] {
   const hands: DetectedHand[] = []
   if (results.leftHandLandmarks?.length) {
     hands.push({label: "Left", landmarks: results.leftHandLandmarks})
@@ -1612,14 +1624,7 @@ export function useSignLanguage({
         locateFile: (asset) => `/mediapipe/holistic/${asset}`,
       })
 
-      holistic.setOptions({
-        selfieMode: false,
-        modelComplexity: captureSettings.holisticModelComplexity,
-        smoothLandmarks: true,
-        refineFaceLandmarks: true,
-        minDetectionConfidence: 0.7,
-        minTrackingConfidence: 0.65,
-      })
+      holistic.setOptions({...HOLISTIC_OPTIONS, modelComplexity: captureSettings.holisticModelComplexity})
 
       holistic.onResults((results: Results) => {
         if (runId !== runIdRef.current || !mountedRef.current) {

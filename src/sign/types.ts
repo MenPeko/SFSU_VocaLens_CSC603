@@ -60,6 +60,23 @@ export interface SignClassifierAlternative {
 
 export type SignTrainingLabelSource = "manual_capture"
 
+export type SignSessionRole = "train" | "validation" | "test"
+
+export const SIGN_SESSION_ROLES: readonly SignSessionRole[] = ["train", "validation", "test"]
+
+// Mirrors data/sign-samples/sessions/<sessionId>/session.json, written by
+// sign_classifier_service/eval/sessions.py. See docs/SIGN_EVAL_PLAN.md.
+export interface SignRecordingSession {
+  sessionId: string
+  role: SignSessionRole
+  signer: string
+  recordedOn: string
+  lighting: string
+  camera: string
+  extractorVersion: string
+  createdAt: string
+}
+
 export interface SignClassifierResult {
   status: "recognized" | "uncertain" | "no_sign"
   label?: CoreSignLabel
@@ -97,6 +114,10 @@ export interface SignTrainingSample extends SignSequenceCapture {
   captureSettingsStatus?: CaptureSettingsStatus
   captureSettingsFallbackReason?: CaptureSettingsFallbackReason
   droppedFrameCount?: number
+  // Stamped by the store from SIGN_TRAINING_SESSION, never by the client.
+  sessionId?: string
+  signer?: string
+  sessionRole?: SignSessionRole
 }
 
 export interface SignTrainingStats {

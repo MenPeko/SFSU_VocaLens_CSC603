@@ -160,13 +160,13 @@ Each answer is **UNCLEAR**. The terms were not on the official pages, not in thi
 | e. Citation or attribution | **UNCLEAR.** No attribution requirement was found. The publication page names Hamid Vaezi Joze and Oscar Koller, BMVC, September 2019, and the title "MS-ASL: A Large-Scale Data Set and Benchmark for Understanding American Sign Language." It does not say to cite that paper. |
 | f. Registration, agreement, or approval | **UNCLEAR.** The download page says "Click Download and follow the instructions." It does not show an agreement. The fetched download page returned no license text. |
 
-Do not use MS-ASL as a fallback until someone reads the license file that accompanies the official download and writes the quoted clauses into this note.
+The course instructor approved the use of any datasets for this project (see [Decisions](#decisions)). The clauses above stay **UNCLEAR** until someone reads the license file that accompanies the official download and quotes it here.
 
 ### Compliance actions
 
-1. Do not download, filter, or train on MS-ASL until the agreement in the official package has been read and this section is updated with quotes.
+1. MS-ASL may be added under the additional-dataset checks in [Decisions](#decisions), one dataset at a time. When the package is downloaded, quote the agreement that ships with it in this section.
 2. Keep `data/ms-asl/` gitignored, which the root `.gitignore` already does.
-3. If a gloss is missing from ASL Citizen, record the gap in the report. Do not fill it from MS-ASL while the terms are unread.
+3. If a gloss is missing from ASL Citizen, record the gap in the report unless a dataset that passed the checks and was kept covers it.
 
 ## Repository audit
 
@@ -252,5 +252,12 @@ These are the repository's choices. They do not add permissions or definitions t
 
 - Landmarks, model weights, and evaluation outputs derived from ASL Citizen stay on the machine that produced them. `data/landmarks/` holds landmark files. `models/sign/` holds model weights. `data/sign-reports/` holds evaluation outputs. `data/sign-samples/` and `data/sign-samples-archive/` are ignored on the same rule so a dataset frame or landmark file in those trees is not committed. The only tracked file in each tree is `README.md`.
 - Dataset clips and frames are not shown in slides or reports. Anything a person can see uses the team's own camera recordings.
-- MS-ASL is not used. A gloss missing from ASL Citizen is recorded as a gap.
+- **Additional datasets (updated November 7, 2026).** Additional datasets, such as MS-ASL and Kaggle sign datasets, may be added one at a time. Each one is added only after it passes all of these checks:
+  1. It is isolated-sign video. Static fingerspelling images are not used.
+  2. Its glosses are mapped in `sign_classifier_service/eval/gloss_map.json`.
+  3. It has signer IDs, or a documented workaround that keeps one signer's clips on one side of every split.
+  4. It passes a duplicate check against the data already in use.
+  5. It is kept or dropped based on accuracy on the owner's own held-out test session (`own-heldout`), as in the keep rule in `docs/SIGN_EVAL_PLAN.md`.
+
+  The course instructor approved the use of any datasets for this academic, non-commercial project. Raw data, landmarks, and weights still stay out of the repository, on the same rule as the ASL Citizen bullet above. A gloss that no kept dataset covers is recorded as a gap.
 - Cite Desai et al. 2023 wherever the dataset is named. The `desai2023asl` entry is in the ASL Citizen section above.

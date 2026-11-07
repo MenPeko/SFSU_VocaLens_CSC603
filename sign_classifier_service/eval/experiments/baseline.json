@@ -1,0 +1,6 @@
+{
+  "name": "baseline",
+  "description": "Own training sessions only.",
+  "extends": null,
+  "trainSources": ["own"]
+}

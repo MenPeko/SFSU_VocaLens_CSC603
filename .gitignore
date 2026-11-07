@@ -37,10 +37,11 @@ Thumbs.db
 *.tmp
 .cache/
 
-# Local evaluation data. Never commit VizWiz images, ASL Citizen clips, or MS-ASL video.
+# Local evaluation data. Never commit VizWiz images, ASL Citizen clips, or MS-ASL or Kaggle video.
 data/vizwiz/
 data/asl-citizen/
 data/ms-asl/
+data/kaggle/
 
 # Derived ASL Citizen data stays local. README.md is the only tracked file.
 # See docs/DATA_LICENSES.md (Decisions).
@@ -59,3 +60,5 @@ data/landmarks/**
 models/sign/**
 !models/sign/**/
 !models/sign/**/README.md
+# Held-out signer lists, filtered ASL Citizen manifests. See docs/SIGN_EVAL_PLAN.md.
+data/sign-eval/

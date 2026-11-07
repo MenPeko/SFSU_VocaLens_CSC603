@@ -1,0 +1,33 @@
+{
+  "requiredExtractorVersion": "mediapipe-holistic-js@0.5.1675471629+schema-v2",
+  "ownSigner": "owner",
+  "seed": 42,
+  "validationRatio": 0.0,
+  "training": {
+    "epochs": 180,
+    "learningRate": 0.12,
+    "weightDecay": 0.0005,
+    "earlyStopping": {
+      "patience": 20,
+      "minDelta": 0.0001
+    }
+  },
+  "aslCitizen": {
+    "testSignerSeed": 603,
+    "testSignerCount": 10,
+    "participantColumn": "Participant ID",
+    "videoColumn": "Video file",
+    "glossColumn": "Gloss"
+  },
+  "duplicates": {
+    "threshold": 0.01,
+    "calibrationFloor": 0.02,
+    "calibrationPercentile": 0.001,
+    "handMissingPenalty": 1.0,
+    "maxCalibrationPairsPerLabel": 5000
+  },
+  "bootstrap": {
+    "resamples": 1000,
+    "seed": 42
+  }
+}

@@ -5,7 +5,11 @@ import {speakOnActiveSession} from "../app/active-session"
 import {getGlassesCameraStreamState} from "../app/glasses-camera-stream"
 import type {SignGestureHint} from "../services/gemini-sign-interpreter"
 import {resolveSignInterpretation} from "../services/sign-translation-resolver"
-import {getSignTrainingStats, saveSignTrainingSample} from "../services/sign-training-store"
+import {
+  getSignTrainingStats,
+  saveSignTrainingSample,
+  SignTrainingSampleValidationError,
+} from "../services/sign-training-store"
 import {isCoreSignLabel} from "../sign/core-signs"
 import type {SignLandmarkFrame, SignCaptureSource} from "../sign/types"
 import {getSignCameraSettings, setSignCameraEnabled} from "../app/sign-camera-control"
@@ -315,30 +319,39 @@ export const routes = {
       if (extractorVersionOrError instanceof Response) return extractorVersionOrError
       const extractorVersion = extractorVersionOrError
 
-      const {sampleId, stats} = await saveSignTrainingSample({
-        label: body.label,
-        labelSource: "manual_capture",
-        landmarkSequence: body.landmarkSequence,
-        frameTimestamps: body.frameTimestamps || [],
-        sequenceDurationMs: body.sequenceDurationMs || 0,
-        sequenceFrameCount: body.sequenceFrameCount || body.landmarkSequence.length,
-        source: body.source || "device-camera",
-        capturedAt: Date.now(),
-        frameCount: body.frameCount || 0,
-        gridColumns: body.gridColumns || 4,
-        gridRows: body.gridRows || 4,
-        mimeType: body.mimeType === "image/jpeg" ? "image/jpeg" : "image/jpeg",
-        skeletonMimeType:
-          body.skeletonMimeType === "image/png" || body.skeletonMimeType === "image/jpeg"
-            ? body.skeletonMimeType
-            : body.mimeType === "image/jpeg"
-              ? "image/jpeg"
-              : undefined,
-        gestureHints: body.gestureHints || [],
-        base64Grid: body.base64Grid?.trim() || undefined,
-        base64SkeletonGrid: body.base64SkeletonGrid?.trim() || undefined,
-        extractorVersion,
-      })
+      let saved: Awaited<ReturnType<typeof saveSignTrainingSample>>
+      try {
+        saved = await saveSignTrainingSample({
+          label: body.label,
+          labelSource: "manual_capture",
+          landmarkSequence: body.landmarkSequence,
+          frameTimestamps: body.frameTimestamps || [],
+          sequenceDurationMs: body.sequenceDurationMs || 0,
+          sequenceFrameCount: body.sequenceFrameCount || body.landmarkSequence.length,
+          source: body.source || "device-camera",
+          capturedAt: Date.now(),
+          frameCount: body.frameCount || 0,
+          gridColumns: body.gridColumns || 4,
+          gridRows: body.gridRows || 4,
+          mimeType: body.mimeType === "image/jpeg" ? "image/jpeg" : "image/jpeg",
+          skeletonMimeType:
+            body.skeletonMimeType === "image/png" || body.skeletonMimeType === "image/jpeg"
+              ? body.skeletonMimeType
+              : body.mimeType === "image/jpeg"
+                ? "image/jpeg"
+                : undefined,
+          gestureHints: body.gestureHints || [],
+          base64Grid: body.base64Grid?.trim() || undefined,
+          base64SkeletonGrid: body.base64SkeletonGrid?.trim() || undefined,
+          extractorVersion,
+        })
+      } catch (error) {
+        if (error instanceof SignTrainingSampleValidationError) {
+          return Response.json({error: error.message}, {status: 400})
+        }
+        throw error
+      }
+      const {sampleId, stats} = saved
 
       return Response.json({
         success: true,

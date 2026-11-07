@@ -1,0 +1,6 @@
+{
+  "name": "plus-asl-citizen",
+  "description": "Baseline plus ASL Citizen clips from signers not in the held-out list.",
+  "extends": "baseline",
+  "trainSources": ["own", "asl-citizen"]
+}

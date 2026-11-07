@@ -13,7 +13,11 @@
     "sign:export-dataset": ".venv/bin/python -m sign_classifier_service.export_dataset",
     "sign:train-model": ".venv/bin/python -m sign_classifier_service.train",
     "sign:evaluate-model": ".venv/bin/python -m sign_classifier_service.evaluate",
-    "sign:report-model": "bash scripts/report-model.sh"
+    "sign:report-model": "bash scripts/report-model.sh",
+    "sign:eval-extract-install": "cd scripts/sign-extract && bun install",
+    "sign:eval-extract": "bun scripts/sign-extract/extract-videos.ts",
+    "sign:eval-run": ".venv/bin/python -m sign_classifier_service.eval.run",
+    "sign:eval-summarize": ".venv/bin/python -m sign_classifier_service.eval.summarize"
   },
   "dependencies": {
     "@mediapipe/holistic": "0.5.1675471629",

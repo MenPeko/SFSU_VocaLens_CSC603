@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from .classifier import (
     ACTIVE_MODEL_POINTER_PATH,
@@ -90,6 +90,10 @@ def load_manifest_examples(manifest_paths: list[Path]) -> list[TrainingExample]:
                     sample_path=Path(f"{manifest_path.name}#{index}"),
                     vector=vectorize_sequence(frames),
                     extractor_version=extractor_value.strip(),
+                    dataset=str(record.get("dataset") or "external"),
+                    signer_id=str(record.get("signerId") or ""),
+                    session_id=str(record.get("sessionId") or ""),
+                    source_video_id=str(record.get("sourceVideoId") or ""),
                 )
             )
 
@@ -116,6 +120,40 @@ def stratified_split(samples: list[TrainingExample], validation_ratio: float, se
         validation.extend(group[:validation_count])
         train.extend(group[validation_count:])
 
+    return DatasetSplit(train=train, validation=validation)
+
+
+def group_split(samples: list[TrainingExample], validation_ratio: float, seed: int) -> DatasetSplit:
+    """Split whole groups (sessions or signers) so no group lands on both sides.
+
+    Every sample must carry a ``group_key``. With fewer than two groups, or a
+    ratio of zero, everything stays in training and validation is empty.
+    """
+
+    missing = [sample.sample_path for sample in samples if not sample.group_key]
+    if missing:
+        raise ValueError(f"{len(missing)} samples have no session or signer; cannot split by group (first: {missing[0]})")
+
+    grouped: dict[str, list[TrainingExample]] = defaultdict(list)
+    for sample in samples:
+        grouped[sample.group_key].append(sample)
+
+    group_keys = sorted(grouped)
+    if validation_ratio <= 0 or len(group_keys) < 2:
+        return DatasetSplit(train=list(samples), validation=[])
+
+    random.Random(seed).shuffle(group_keys)
+    target = validation_ratio * len(samples)
+    validation_keys: set[str] = set()
+    validation_count = 0
+    for key in group_keys[:-1]:
+        if validation_count >= target:
+            break
+        validation_keys.add(key)
+        validation_count += len(grouped[key])
+
+    train = [sample for sample in samples if sample.group_key not in validation_keys]
+    validation = [sample for sample in samples if sample.group_key in validation_keys]
     return DatasetSplit(train=train, validation=validation)
 
 
@@ -164,6 +202,39 @@ def maybe_print_imbalance_warning(label_counts: Counter[str]) -> None:
     print("Consider collecting more samples for underrepresented labels before training.")
 
 
+def _mean_cross_entropy(
+    examples: list[TrainingExample],
+    labels: list[str],
+    weights: list[list[float]],
+    bias: list[float],
+    feature_mean: list[float],
+    feature_std: list[float],
+) -> tuple[float, float]:
+    """Unweighted mean loss and accuracy. Clips whose label the model lacks count as wrong and add no loss."""
+
+    label_to_index = {label: index for index, label in enumerate(labels)}
+    total_loss = 0.0
+    scored = 0
+    correct = 0
+    for example in examples:
+        x = standardize_vector(example.vector, feature_mean, feature_std)
+        logits = [
+            bias[class_index] + sum(weight * value for weight, value in zip(weights[class_index], x))
+            for class_index in range(len(labels))
+        ]
+        probabilities = softmax(logits)
+        target_index = label_to_index.get(example.label)
+        if target_index is None:
+            continue
+        scored += 1
+        total_loss -= math.log(max(probabilities[target_index], 1e-9))
+        if max(range(len(labels)), key=lambda index: probabilities[index]) == target_index:
+            correct += 1
+    loss = total_loss / scored if scored else float("inf")
+    accuracy = correct / len(examples) if examples else 0.0
+    return loss, accuracy
+
+
 def train_softmax_classifier(
     train_examples: list[TrainingExample],
     labels: list[str],
@@ -172,7 +243,25 @@ def train_softmax_classifier(
     epochs: int,
     learning_rate: float,
     weight_decay: float,
-) -> tuple[list[list[float]], list[float], list[dict[str, float]]]:
+    validation_examples: Optional[list[TrainingExample]] = None,
+    early_stopping: Optional[dict[str, Any]] = None,
+) -> tuple[list[list[float]], list[float], list[dict[str, float]], Optional[dict[str, Any]]]:
+    """Full-batch softmax regression.
+
+    With ``early_stopping`` (``patience``, ``minDelta``) and validation clips,
+    every epoch is scored on validation loss, training stops after ``patience``
+    epochs without an improvement of at least ``minDelta``, and the weights of
+    the best epoch are returned. The fourth return value describes that
+    selection; it is ``None`` when early stopping is off.
+    """
+
+    use_early_stopping = bool(early_stopping) and bool(validation_examples)
+    patience = int(early_stopping["patience"]) if use_early_stopping else 0
+    min_delta = float(early_stopping.get("minDelta", 0.0)) if use_early_stopping else 0.0
+    best_loss = float("inf")
+    best_epoch = 0
+    best_state: Optional[tuple[list[list[float]], list[float]]] = None
+
     feature_count = len(feature_mean)
     weights = [[0.0 for _ in range(feature_count)] for _ in labels]
     bias = [0.0 for _ in labels]
@@ -223,15 +312,42 @@ def train_softmax_classifier(
                 grad = grad_w[class_index][feature_index] * scale + weight_decay * weights[class_index][feature_index]
                 weights[class_index][feature_index] -= current_lr * grad
 
-        history.append(
-            {
-                "epoch": float(epoch + 1),
-                "loss": total_loss / total_weight,
-                "learningRate": current_lr,
-            }
-        )
+        entry = {
+            "epoch": float(epoch + 1),
+            "loss": total_loss / total_weight,
+            "learningRate": current_lr,
+        }
+        if use_early_stopping:
+            assert validation_examples is not None
+            validation_loss, validation_accuracy = _mean_cross_entropy(
+                validation_examples, labels, weights, bias, feature_mean, feature_std
+            )
+            entry["validationLoss"] = validation_loss
+            entry["validationAccuracy"] = validation_accuracy
+            if validation_loss < best_loss - min_delta:
+                best_loss = validation_loss
+                best_epoch = epoch + 1
+                best_state = ([list(row) for row in weights], list(bias))
+        history.append(entry)
+        if use_early_stopping and epoch + 1 - best_epoch >= patience:
+            break
 
-    return weights, bias, history
+    if not use_early_stopping:
+        return weights, bias, history, None
+
+    if best_state is not None:
+        weights, bias = best_state
+    selection = {
+        "monitor": "validationLoss",
+        "patience": patience,
+        "minDelta": min_delta,
+        "maxEpochs": epochs,
+        "bestEpoch": best_epoch,
+        "bestValidationLoss": best_loss,
+        "stoppedEpoch": len(history),
+        "stoppedEarly": len(history) < epochs,
+    }
+    return weights, bias, history, selection
 
 
 def predict_from_artifact(artifact: dict[str, Any], example: TrainingExample) -> tuple[str, float]:
@@ -318,6 +434,7 @@ def build_artifact(
     weight_decay: float,
     model_version: str,
     training_run_id: str,
+    early_stopping: Optional[dict[str, Any]] = None,
 ) -> tuple[dict[str, Any], list[dict[str, float]]]:
     labels = [label for label in CORE_SIGN_LABELS if any(example.label == label for example in train_examples)]
     if len(labels) < 2:
@@ -327,7 +444,7 @@ def build_artifact(
 
     train_vectors = [example.vector for example in train_examples]
     feature_mean, feature_std = compute_standardization(train_vectors)
-    weights, bias, history = train_softmax_classifier(
+    weights, bias, history, selection = train_softmax_classifier(
         train_examples=train_examples,
         labels=labels,
         feature_mean=feature_mean,
@@ -335,6 +452,8 @@ def build_artifact(
         epochs=epochs,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
+        validation_examples=validation_examples,
+        early_stopping=early_stopping,
     )
 
     artifact = {
@@ -365,6 +484,8 @@ def build_artifact(
         "validation": evaluate_artifact(artifact, validation_examples),
         "history": history,
     }
+    if selection is not None:
+        artifact["metrics"]["earlyStopping"] = selection
     return artifact, history
 
 
@@ -445,9 +566,18 @@ def main() -> None:
     if not all_examples:
         raise SystemExit("No training examples found. Capture local samples or provide --manifest data first.")
 
-    split = stratified_split(all_examples, validation_ratio=args.validation_ratio, seed=args.seed)
-    if not split.train or not split.validation:
-        raise SystemExit("Could not build both train and validation splits. Add more labeled samples per sign.")
+    if all(example.group_key for example in all_examples):
+        split = group_split(all_examples, validation_ratio=args.validation_ratio, seed=args.seed)
+    else:
+        print(
+            "WARNING: some samples have no session or signer, so validation is split by clip. "
+            "That validation score is optimistic; use sign_classifier_service.eval.run for held-out numbers."
+        )
+        split = stratified_split(all_examples, validation_ratio=args.validation_ratio, seed=args.seed)
+    if not split.train:
+        raise SystemExit("Could not build a training split. Add more labeled samples per sign.")
+    if not split.validation:
+        print("WARNING: only one session or signer is present, so there is no validation split.")
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     training_run_id = args.training_run_id or f"core-sign-{timestamp}"

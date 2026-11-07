@@ -14,6 +14,7 @@
     "sign:train-model": ".venv/bin/python -m sign_classifier_service.train",
     "sign:evaluate-model": ".venv/bin/python -m sign_classifier_service.evaluate",
     "sign:report-model": "bash scripts/report-model.sh",
+    "sign:eval-sessions": ".venv/bin/python -m sign_classifier_service.eval.sessions list",
     "sign:eval-extract-install": "cd scripts/sign-extract && bun install",
     "sign:eval-extract": "bun scripts/sign-extract/extract-videos.ts",
     "sign:eval-run": ".venv/bin/python -m sign_classifier_service.eval.run",

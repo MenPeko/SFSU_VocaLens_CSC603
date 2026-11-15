@@ -23,7 +23,7 @@
   "dependencies": {
     "@mediapipe/holistic": "0.5.1675471629",
     "@mediapipe/hands": "0.4.1675469240",
-    "@mentra/sdk": "workspace:*",
+    "@mentra/sdk": "2.1.27",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.3",

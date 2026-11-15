@@ -7,6 +7,7 @@ TUNNEL_PID_FILE="$ROOT_DIR/.ngrok.pid"
 CLASSIFIER_PID_FILE="$ROOT_DIR/.sign-classifier.pid"
 
 PORT="${PORT:-3333}"
+BUN_PORT="${BUN_PORT:-$((PORT + 1))}"
 SIGN_CLASSIFIER_PORT="${SIGN_CLASSIFIER_PORT:-8001}"
 
 if [[ -f "$ROOT_DIR/.env" ]]; then
@@ -52,12 +53,14 @@ fi
 # Kill any orphan bun processes on the app port
 # ============================================
 
-ORPHAN_PIDS="$(lsof -ti :"${PORT}" 2>/dev/null || true)"
+ORPHAN_PIDS="$(lsof -ti :"${PORT}" -ti :"${BUN_PORT}" 2>/dev/null || true)"
 if [[ -n "$ORPHAN_PIDS" ]]; then
   echo "$ORPHAN_PIDS" | while read -r OPID; do
-    if kill -0 "$OPID" 2>/dev/null; then
+    if [[ -n "$OPID" ]] && kill -0 "$OPID" 2>/dev/null; then
       kill "$OPID" 2>/dev/null || true
-      echo "Killed orphan process on port ${PORT} (PID $OPID)"
+      sleep 0.2
+      kill -9 "$OPID" 2>/dev/null || true
+      echo "Killed orphan process on port ${PORT}/${BUN_PORT} (PID $OPID)"
       stopped_any=true
     fi
   done

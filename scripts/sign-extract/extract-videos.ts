@@ -171,6 +171,7 @@ async function main() {
 
   const browser = await chromium.launch({
     headless: true,
+    args: ["--enable-webgl", "--ignore-gpu-blocklist", "--use-gl=angle"],
     ...(options.channel ? {channel: options.channel} : {}),
     ...(options.executable ? {executablePath: options.executable} : {}),
   })

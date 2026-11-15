@@ -12,6 +12,15 @@
       "thank_you": "thank_you",
       "please": "please"
     },
-    "asl-citizen": {}
+    "asl-citizen": {
+      "WAIT": "wait",
+      "HELP": "help",
+      "YES": "yes",
+      "NO": "no",
+      "STOP": "stop",
+      "AGAIN": "again",
+      "THANKYOU": "thank_you",
+      "PLEASE": "please"
+    }
   }
 }

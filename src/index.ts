@@ -11,6 +11,7 @@
  */
 
 import {serve} from "bun"
+import express from "express"
 import {routes, getSignDebugSettings, getTargetLanguage} from "./api/routes"
 import index from "./webview/index.html"
 import {CaptionsApp} from "./app/CaptionsApp"
@@ -84,6 +85,12 @@ await captionsApp.start()
 
 // Get Express app instance AFTER starting (routes are registered)
 const expressApp = captionsApp.getExpressApp()
+
+// Increase JSON body limit on Express (default in @mentra/sdk is 100kb, which blocks sign grids and training samples)
+const jsonParserIndex = expressApp._router?.stack?.findIndex((layer: any) => layer.name === "jsonParser") ?? -1
+if (jsonParserIndex !== -1) {
+  expressApp._router.stack[jsonParserIndex].handle = express.json({limit: "50mb"})
+}
 
 // SSE stream - served directly from Express (can't proxy long-lived connections)
 expressApp.get("/api/stream", (req, res) => {
@@ -171,10 +178,13 @@ expressApp.all("*", async (req, res) => {
   try {
     const bunUrl = `http://localhost:${BUN_PORT}${req.originalUrl || req.url}`
 
+    const proxyHeaders = {...(req.headers as Record<string, string>)}
+    delete proxyHeaders["content-length"]
+
     // Proxy request to Bun
     const response = await fetch(bunUrl, {
       method: req.method,
-      headers: req.headers as HeadersInit,
+      headers: proxyHeaders,
       body: req.method !== "GET" && req.method !== "HEAD" ? JSON.stringify(req.body) : undefined,
     })
 

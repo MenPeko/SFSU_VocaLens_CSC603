@@ -11,6 +11,8 @@ import {
   type SignCaptureSettings,
 } from "../sign/capture-settings"
 import {fetchSignCaptureBootstrap} from "./sign-capture-bootstrap"
+import {VocalensCapture} from "./components/VocalensCapture"
+import {speakText} from "./lib/speech"
 import "./index.css"
 
 const LANGUAGES = [
@@ -65,11 +67,11 @@ const APP_MODE_CONFIG: Record<
     navSubtitle: "OCR to Speech",
     panelTitle: "Written Text To Speech",
     panelDescription:
-      "Use the glasses button to capture whiteboards, notes, or printed text. OCR and translation results are spoken back on the glasses.",
-    emptyTitle: "PRESS GLASSES BUTTON",
-    emptyHint: "to capture written text and speak the translation",
+      "Press and hold to ask about what the phone camera sees. The answer is spoken here. The glasses button still reads written text aloud.",
+    emptyTitle: "PRESS AND HOLD",
+    emptyHint: "to ask about what the camera sees",
     footerCountLabel: "TEXT TRANSLATIONS",
-    chipLabel: "GLASSES BUTTON",
+    chipLabel: "PHONE CAMERA",
   },
   sign: {
     navTitle: "Live Sign",
@@ -89,7 +91,7 @@ function getModeButtonStyle(active: boolean) {
     width: "100%",
     border: "4px solid #000000",
     background: active ? "#FF6600" : "#ffffff",
-    color: active ? "#ffffff" : "#000000",
+    color: "#000000",
     padding: "0.65rem 0.7rem",
     textAlign: "left" as const,
     boxShadow: active ? "5px 5px 0 #000000" : "4px 4px 0 #000000",
@@ -103,8 +105,10 @@ function StatusBadge({status}: {status: AppStatus}) {
   return (
     <span
       className={config.pulse ? "cli-pulse" : ""}
+      role="status"
+      aria-live="polite"
       style={{
-        color: config.color,
+        color: "#000000",
         fontSize: "0.75rem",
         letterSpacing: "0.1em",
         fontWeight: 900,
@@ -136,7 +140,8 @@ function TranslationCard({entry, onRemove}: {entry: TranslationEntry; onRemove: 
   const detectedLanguage = typeof entry.detectedLanguage === "string" ? entry.detectedLanguage : "unknown"
   const targetLanguage = typeof entry.targetLanguage === "string" ? entry.targetLanguage : "English"
   const isSignSource = entry.sourceType === "sign"
-  const sourceLabel = entry.sourceLabel || (isSignSource ? "ASL GRID" : "WHITEBOARD OCR")
+  const isVocalens = entry.sourceType === "vocalens"
+  const sourceLabel = entry.sourceLabel || (isVocalens ? "SPOKEN QUESTION" : isSignSource ? "ASL GRID" : "WHITEBOARD OCR")
   const recognizerLabel =
     entry.recognizerType === "classifier"
       ? entry.recognizedLabel
@@ -213,7 +218,7 @@ function TranslationCard({entry, onRemove}: {entry: TranslationEntry; onRemove: 
       }}
     >
       <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem"}}>
-        <span style={{fontSize: "0.65rem", color: "#FF6600", letterSpacing: "0.12em", fontWeight: 900}}>
+        <span style={{fontSize: "0.65rem", color: "#000000", letterSpacing: "0.12em", fontWeight: 900}}>
           {sourceLabel}
         </span>
         <span style={{fontSize: "0.6rem", color: "#444444", letterSpacing: "0.08em", fontWeight: 700}}>
@@ -231,42 +236,70 @@ function TranslationCard({entry, onRemove}: {entry: TranslationEntry; onRemove: 
         </div>
       )}
 
-      {!isSameLanguage && !isSignSource && (
-        <div style={{marginBottom: "0.5rem"}}>
-          <span style={{fontSize: "0.7rem", color: "#444444", letterSpacing: "0.05em", fontWeight: 700}}>
-            [{detectedLanguage.toUpperCase()}]
-          </span>
-          <p style={{fontSize: "0.85rem", color: "#444444", marginTop: 4}}>
-            {originalText}
-          </p>
+      {isVocalens ? (
+        <div>
+          <span style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.05em", fontWeight: 700}}>QUESTION</span>
+          <p style={{fontSize: "0.85rem", color: "#000000", marginTop: 4}}>{originalText}</p>
+          <span style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.05em", fontWeight: 700}}>ANSWER</span>
+          <p style={{fontSize: "0.9rem", color: "#000000", fontWeight: 900, marginTop: 4}}>{translatedText}</p>
+          <button
+            type="button"
+            aria-label="Replay answer"
+            onClick={() => {
+              void speakText(translatedText)
+            }}
+            style={{
+              marginTop: "0.65rem",
+              background: "#ffffff",
+              color: "#000000",
+              border: "4px solid #000000",
+              padding: "0.45rem 0.7rem",
+              fontFamily: "inherit",
+              fontWeight: 900,
+              fontSize: "0.75rem",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              boxShadow: "3px 3px 0 #FF6600",
+              cursor: "pointer",
+            }}
+          >
+            Replay answer
+          </button>
         </div>
+      ) : (
+        <>
+          {!isSameLanguage && !isSignSource && (
+            <div style={{marginBottom: "0.5rem"}}>
+              <span style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.05em", fontWeight: 700}}>
+                [{detectedLanguage.toUpperCase()}]
+              </span>
+              <p style={{fontSize: "0.85rem", color: "#444444", marginTop: 4}}>{originalText}</p>
+            </div>
+          )}
+          {shouldShowSignSourceText && (
+            <div style={{marginBottom: "0.5rem"}}>
+              <span style={{fontSize: "0.68rem", color: "#444444", letterSpacing: "0.06em", fontWeight: 700}}>
+                [INTERPRETED ENGLISH]
+              </span>
+              <p style={{fontSize: "0.82rem", color: "#444444", marginTop: 4}}>{originalText}</p>
+            </div>
+          )}
+          <div>
+            {isSignSource ? (
+              <span style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.05em", fontWeight: 700}}>
+                [ASL TO {targetLanguage.toUpperCase()}]
+              </span>
+            ) : !isSameLanguage ? (
+              <span style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.05em", fontWeight: 700}}>
+                [{targetLanguage.toUpperCase()}]
+              </span>
+            ) : null}
+            <p style={{fontSize: "0.9rem", color: "#000000", fontWeight: 900, marginTop: 4}}>{translatedText}</p>
+          </div>
+        </>
       )}
-      {shouldShowSignSourceText && (
-        <div style={{marginBottom: "0.5rem"}}>
-          <span style={{fontSize: "0.68rem", color: "#444444", letterSpacing: "0.06em", fontWeight: 700}}>
-            [INTERPRETED ENGLISH]
-          </span>
-          <p style={{fontSize: "0.82rem", color: "#444444", marginTop: 4}}>
-            {originalText}
-          </p>
-        </div>
-      )}
-      <div>
-        {isSignSource ? (
-          <span style={{fontSize: "0.7rem", color: "#FF6600", letterSpacing: "0.05em", fontWeight: 700}}>
-            [ASL TO {targetLanguage.toUpperCase()}]
-          </span>
-        ) : !isSameLanguage ? (
-          <span style={{fontSize: "0.7rem", color: "#FF6600", letterSpacing: "0.05em", fontWeight: 700}}>
-            [{targetLanguage.toUpperCase()}]
-          </span>
-        ) : null}
-        <p style={{fontSize: "0.9rem", color: "#000000", fontWeight: 900, marginTop: 4}}>
-          {translatedText}
-        </p>
-      </div>
       <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem", borderTop: "2px solid #000000", paddingTop: "0.4rem"}}>
-        <span style={{fontSize: "0.6rem", color: "#FF6600", fontWeight: 700}}>
+        <span style={{fontSize: "0.6rem", color: "#000000", fontWeight: 700}}>
           {entry.spokeOnGlasses ? "SPOKEN ON GLASSES" : ""}
         </span>
         <p style={{fontSize: "0.6rem", color: "#444444", textAlign: "right", margin: 0, fontWeight: 700}}>
@@ -308,7 +341,7 @@ function PrivacyGate({onAccept}: {onAccept: () => void}) {
       >
         GLOSSTRANS
       </h1>
-      <span style={{fontSize: "0.7rem", color: "#FF6600", letterSpacing: "0.1em", marginBottom: "1.5rem", fontWeight: 900}}>
+      <span style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.1em", marginBottom: "1.5rem", fontWeight: 900}}>
         PRIVACY POLICY
       </span>
 
@@ -327,36 +360,41 @@ function PrivacyGate({onAccept}: {onAccept: () => void}) {
           boxShadow: "6px 6px 0 #FF6600",
         }}
       >
-        <p style={{color: "#FF6600", fontWeight: 900, marginTop: 0}}>DATA WE PROCESS</p>
+        <p style={{color: "#000000", fontWeight: 900, marginTop: 0}}>DATA WE PROCESS</p>
         <p>When you use GlossTrans, the following data is processed:</p>
         <ul style={{paddingLeft: "1.2rem", margin: "0.5rem 0"}}>
           <li>Photos captured through your smart glasses</li>
+          <li>One frame from the phone camera when you ask a spoken question</li>
+          <li>The spoken question, sent for transcription</li>
           <li>Text extracted from those photos via OCR</li>
-          <li>Translations of extracted text</li>
+          <li>Translations and spoken answers</li>
           <li>Your selected target language preference</li>
         </ul>
 
-        <p style={{color: "#FF6600", fontWeight: 900}}>THIRD-PARTY SERVICES</p>
+        <p style={{color: "#000000", fontWeight: 900}}>THIRD-PARTY SERVICES</p>
         <p>
-          Photos and text are sent to the <strong>Google Gemini API</strong> for
-          text extraction and translation. Google's privacy policy applies to
+          Photos, questions, and text are sent to the <strong>Google Gemini API</strong> for
+          text extraction, translation, and visual answers. Spoken questions are sent to the
+          <strong> OpenAI Whisper API</strong> for transcription, unless that service is unavailable
+          and a local transcriber is used instead. Google's and OpenAI's privacy policies apply to
           data processed by their services.
         </p>
 
-        <p style={{color: "#FF6600", fontWeight: 900}}>DATA RETENTION</p>
+        <p style={{color: "#000000", fontWeight: 900}}>DATA RETENTION</p>
         <p>
-          GlossTrans does <strong>not</strong> store your photos, text, or translations
-          permanently. All data is held in temporary memory and cleared when the
-          session ends or the app restarts. No data is written to a database.
+          Phone photos stay in memory for the active question and are cleared when you take a new photo,
+          the session goes idle, or the app restarts. They are not written to disk. A local timing log
+          stores the question, the answer, and stage timestamps only. It does not store the photo or the recording.
         </p>
 
-        <p style={{color: "#FF6600", fontWeight: 900}}>DATA SHARING</p>
+        <p style={{color: "#000000", fontWeight: 900}}>DATA SHARING</p>
         <p>
-          We do not sell, trade, or rent your personal information. Data is shared
-          only with Google Gemini API for the purpose of providing the translation service.
+          We do not sell, trade, or rent your personal information. Questions and photos are shared
+          with Google Gemini to produce an answer, and spoken questions are shared with OpenAI Whisper
+          for transcription when that service is available.
         </p>
 
-        <p style={{color: "#FF6600", fontWeight: 900}}>YOUR RIGHTS (CCPA/CPRA)</p>
+        <p style={{color: "#000000", fontWeight: 900}}>YOUR RIGHTS (CCPA/CPRA)</p>
         <p>
           As a California resident, you have the right to know what data is collected,
           request deletion, and opt out of data sales (we do not sell data).
@@ -373,7 +411,7 @@ function PrivacyGate({onAccept}: {onAccept: () => void}) {
           width: "100%",
           padding: "0.85rem",
           background: "#FF6600",
-          color: "#ffffff",
+          color: "#000000",
           border: "4px solid #000000",
           fontSize: "0.8rem",
           fontFamily: "inherit",
@@ -867,7 +905,7 @@ export function App() {
           >
             GlossTrans
           </h1>
-          <span style={{fontSize: "0.65rem", color: "#FF6600", letterSpacing: "0.08em", fontWeight: 900}}>
+          <span style={{fontSize: "0.65rem", color: "#000000", letterSpacing: "0.08em", fontWeight: 900}}>
             TEXT TO SPEECH + ASL TO SPEECH
           </span>
         </div>
@@ -881,7 +919,13 @@ export function App() {
             const active = activeMode === mode
 
             return (
-              <button key={mode} type="button" onClick={() => handleModeChange(mode)} style={getModeButtonStyle(active)}>
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={active}
+                onClick={() => handleModeChange(mode)}
+                style={getModeButtonStyle(active)}
+              >
                 <div style={{fontSize: "0.76rem", fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase"}}>
                   {config.navTitle}
                 </div>
@@ -903,12 +947,13 @@ export function App() {
 
         {/* Language selector */}
         <div style={{marginBottom: "0.25rem"}}>
-          <span style={{fontSize: "0.7rem", color: "#444444", letterSpacing: "0.05em", fontWeight: 700, display: "block", marginBottom: "0.35rem"}}>
-            Language for translation & speech of choice:
-          </span>
+          <label htmlFor="target-language" style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.05em", fontWeight: 700, display: "block", marginBottom: "0.35rem"}}>
+            Language for translation and speech:
+          </label>
         </div>
         <div style={{display: "flex", alignItems: "center", gap: "0.5rem"}}>
           <select
+            id="target-language"
             value={targetLanguage}
             onChange={(e) => handleLanguageChange(e.target.value)}
             style={{
@@ -921,7 +966,6 @@ export function App() {
               fontFamily: "inherit",
               letterSpacing: "0.05em",
               fontWeight: 700,
-              outline: "none",
               cursor: "pointer",
               boxShadow: "4px 4px 0 #FF6600",
             }}
@@ -938,6 +982,8 @@ export function App() {
       {/* Connection warning */}
       {!connected && (
         <div
+          role="status"
+          aria-live="polite"
           style={{
             background: "#FF6600",
             border: "4px solid #000000",
@@ -946,7 +992,7 @@ export function App() {
             boxShadow: "4px 4px 0 #000000",
           }}
         >
-          <p style={{fontSize: "0.8rem", color: "#ffffff", fontWeight: 900, margin: 0}}>
+          <p style={{fontSize: "0.8rem", color: "#000000", fontWeight: 900, margin: 0}}>
             CONNECTING TO SERVER...
           </p>
         </div>
@@ -955,6 +1001,7 @@ export function App() {
       {/* Error */}
       {error && (
         <div
+          role="alert"
           style={{
             background: "#ffffff",
             border: "4px solid #000000",
@@ -983,7 +1030,7 @@ export function App() {
             <p
               style={{
                 fontSize: "0.68rem",
-                color: "#FF6600",
+                color: "#000000",
                 letterSpacing: "0.14em",
                 fontWeight: 900,
                 textTransform: "uppercase",
@@ -1020,10 +1067,13 @@ export function App() {
         )}
       </div>
 
+      {activeMode === "whiteboard" && <VocalensCapture />}
+
       {/* Live status / OCR preview */}
       {activeMode === "whiteboard" && status !== "ready" && status !== "disconnected" && (
         <div
           className="cli-glow"
+          aria-live="polite"
           style={{
             background: "#ffffff",
             border: "4px solid #FF6600",
@@ -1034,7 +1084,7 @@ export function App() {
         >
           <p
             className="cli-pulse"
-            style={{fontSize: "0.75rem", color: "#FF6600", letterSpacing: "0.05em", margin: 0, fontWeight: 900}}
+            style={{fontSize: "0.75rem", color: "#000000", letterSpacing: "0.05em", margin: 0, fontWeight: 900}}
           >
             {statusMessage}
           </p>
@@ -1061,7 +1111,7 @@ export function App() {
         >
           <div style={{display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap"}}>
             <div>
-              <p style={{fontSize: "0.68rem", color: "#FF6600", letterSpacing: "0.14em", fontWeight: 900, textTransform: "uppercase", margin: 0}}>
+              <p style={{fontSize: "0.68rem", color: "#000000", letterSpacing: "0.14em", fontWeight: 900, textTransform: "uppercase", margin: 0}}>
                 Dataset Capture
               </p>
               <p style={{fontSize: "0.75rem", color: "#000000", margin: "0.35rem 0 0 0", fontWeight: 700, lineHeight: 1.5}}>
@@ -1074,7 +1124,7 @@ export function App() {
               style={{
                 border: "4px solid #000000",
                 background: trainingMode ? "#FF6600" : "#ffffff",
-                color: trainingMode ? "#ffffff" : "#000000",
+                color: "#000000",
                 padding: "0.45rem 0.65rem",
                 fontFamily: "inherit",
                 fontWeight: 900,
@@ -1145,7 +1195,7 @@ export function App() {
                   style={{
                     border: "3px solid #000000",
                     background: label === trainingLabel ? "#FF6600" : "#ffffff",
-                    color: label === trainingLabel ? "#ffffff" : "#000000",
+                    color: "#000000",
                     padding: "0.35rem 0.5rem",
                     boxShadow: label === trainingLabel ? "3px 3px 0 #000000" : "2px 2px 0 #000000",
                   }}
@@ -1208,8 +1258,8 @@ export function App() {
           alignItems: "center",
         }}
       >
-        <span style={{fontSize: "0.65rem", color: "#FF6600", letterSpacing: "0.08em", fontWeight: 900}}>
-          MENTRA OS
+        <span style={{fontSize: "0.65rem", color: "#000000", letterSpacing: "0.04em", fontWeight: 900, lineHeight: 1.3}}>
+          San Francisco State University
         </span>
         <span style={{fontSize: "0.65rem", color: "#000000", fontWeight: 900}}>
           {visibleTranslations.length > 0 ? `${visibleTranslations.length} ${activeModeConfig.footerCountLabel}` : ""}

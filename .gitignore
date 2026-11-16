@@ -39,6 +39,7 @@ Thumbs.db
 
 # Local evaluation data. Never commit VizWiz images, ASL Citizen clips, or MS-ASL or Kaggle video.
 data/vizwiz/
+data/vocalens/
 data/asl-citizen/
 data/ms-asl/
 data/kaggle/

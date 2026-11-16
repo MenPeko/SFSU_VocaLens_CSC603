@@ -13,7 +13,7 @@ export interface TranslationEntry {
   detectedLanguage: string
   targetLanguage: string
   timestamp: number
-  sourceType?: "text" | "sign"
+  sourceType?: "text" | "sign" | "vocalens"
   sourceLabel?: string
   sourceModel?: string
   frameCount?: number

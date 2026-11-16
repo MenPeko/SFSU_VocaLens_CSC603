@@ -14,6 +14,7 @@ import {isCoreSignLabel} from "../sign/core-signs"
 import type {SignLandmarkFrame, SignCaptureSource} from "../sign/types"
 import {getSignCameraSettings, setSignCameraEnabled} from "../app/sign-camera-control"
 import {normalizeSignCaptureSettings} from "../sign/capture-settings"
+import {vocalensRoutes} from "./vocalens-routes"
 
 // In-memory language preference (per-app, not per-user for simplicity)
 let targetLanguage = "English"
@@ -76,6 +77,7 @@ interface SignTrainingSampleRequestBody extends SignTranslateRequestBody {
 export const routes = {
   // SSE stream for live translation updates
   ...streamRoute,
+  ...vocalensRoutes,
 
   "/api/settings/language": {
     async GET() {

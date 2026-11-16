@@ -42,11 +42,31 @@ console.log("🚀 Starting Whiteboard Reader TTS App...\n")
 
 console.log(`📦 Starting Bun server on port ${BUN_PORT}...`)
 
+async function serveMediapipeAsset(req: Request): Promise<Response> {
+  const pathname = new URL(req.url).pathname
+  if (!pathname.startsWith("/mediapipe/") || pathname.includes("..") || pathname.includes("\\")) {
+    return new Response("Not found", {status: 404})
+  }
+
+  const file = Bun.file(`./public${pathname}`)
+  if (!(await file.exists())) {
+    return new Response("Not found", {status: 404})
+  }
+
+  return new Response(file)
+}
+
 const bunServer = serve({
   port: BUN_PORT,
   routes: {
     // Custom API routes
     ...routes,
+
+    // MediaPipe loads these scripts when the camera starts. They must be the
+    // files in public/, not the HTML app shell from the catch-all below.
+    "/mediapipe/*": {
+      GET: serveMediapipeAsset,
+    },
 
     // Serve webview as fallback (Bun handles JSX/Tailwind automatically)
     "/*": index,

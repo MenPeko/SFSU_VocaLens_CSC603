@@ -106,6 +106,7 @@ class Workspace:
         self.asl_landmarks = root / "asl" / "clips.jsonl"
         self.asl_signers = root / "asl-citizen-test-signers.json"
         self.asl_summary = root / "asl-citizen-filter-summary.json"
+        self.asl_filtered = root / "asl-citizen-filtered.csv"
         self.write_registry([])
 
     def write_registry(self, session_ids: list[str]) -> None:
@@ -129,6 +130,7 @@ class Workspace:
             asl_landmarks=self.asl_landmarks,
             asl_test_signers_path=self.asl_signers,
             asl_filter_summary_path=self.asl_summary,
+            asl_filtered_csv_path=self.asl_filtered,
             run_id=run_id,
         )
 
@@ -431,20 +433,35 @@ class RunTests(unittest.TestCase):
 
     def _write_asl(self, signers: list[str], clips_per_sign: int = 2, held_out: Optional[list[str]] = None) -> None:
         rng = random.Random(42)
+        held = set(held_out or [])
+        filtered: list[dict[str, str]] = []
         self.ws.asl_landmarks.parent.mkdir(parents=True, exist_ok=True)
         with self.ws.asl_landmarks.open("w", encoding="utf-8") as handle:
             for signer in signers:
+                source_csv = "test.csv" if signer in held else "train.csv"
                 for label in CORE_SIGN_LABELS:
                     for clip in range(clips_per_sign):
+                        video = f"{signer}-{label}-{clip}.mp4"
                         record = {
                             "dataset": "asl-citizen",
                             "label": label,
                             "signerId": signer,
-                            "sourceVideoId": f"{signer}-{label}-{clip}.mp4",
+                            "sourceVideoId": video,
                             "extractorVersion": MEDIAPIPE_EXTRACTOR_VERSION,
                             "landmarkSequence": make_frames(label, rng),
                         }
                         handle.write(json.dumps(record) + "\n")
+                        filtered.append(
+                            {
+                                "participantId": signer,
+                                "videoFile": video,
+                                "sourceGloss": label,
+                                "label": label,
+                                "sourceCsv": source_csv,
+                                "videoPath": "",
+                            }
+                        )
+        asl_citizen.write_filtered_csv(filtered, self.ws.asl_filtered)
         csv_path = self.ws.root / "split.csv"
         csv_path.write_text("Participant ID,Video file,Gloss\n", encoding="utf-8")
         self.ws.asl_summary.write_text(
@@ -452,7 +469,14 @@ class RunTests(unittest.TestCase):
         )
         if held_out is not None:
             self.ws.asl_signers.write_text(
-                json.dumps({"testSigners": held_out, "sourceCsvSha256": {str(csv_path): sha256_file(csv_path)}}),
+                json.dumps(
+                    {
+                        "testSigners": held_out,
+                        "testSplitParticipants": sorted(held),
+                        "trainValParticipants": sorted(signer for signer in signers if signer not in held),
+                        "sourceCsvSha256": {str(csv_path): sha256_file(csv_path)},
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -519,6 +543,17 @@ class LeakCheckTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("P7", failures[0])
 
+    def test_training_clip_from_test_split_signer_fails(self) -> None:
+        rng = random.Random(3)
+        train = [make_example("yes", rng, dataset="asl-citizen", signer="P7", video="a.mp4")]
+        failures = leakage.check_asl_official_splits(train, {"P7"}, set(), set())
+        self.assertEqual(len(failures), 1)
+        self.assertIn("test-split", failures[0])
+        self.assertIn("P7", failures[0])
+        leaked = leakage.check_asl_official_splits([], set(), {"P8"}, {"P8"})
+        self.assertEqual(len(leaked), 1)
+        self.assertIn("train.csv or val.csv", leaked[0])
+
     def test_shared_video_id_fails_and_repeats_in_training_are_dropped(self) -> None:
         rng = random.Random(4)
         first = make_example("no", rng, dataset="asl-citizen", signer="P1", video="v1.mp4")
@@ -567,7 +602,7 @@ class AslCitizenTests(unittest.TestCase):
         rows = []
         for signer in range(20):
             labels = ["yes", "no"] if signer % 4 else ["yes"]
-            rows += [{"participantId": f"P{signer:02d}", "label": label} for label in labels]
+            rows += [{"participantId": f"P{signer:02d}", "label": label, "sourceCsv": "test.csv"} for label in labels]
         selected, eligible = asl_citizen.select_test_signers(rows, seed=603, count=5)
         self.assertEqual(len(eligible), 15)
         self.assertEqual(selected, asl_citizen.select_test_signers(list(reversed(rows)), seed=603, count=5)[0])
@@ -590,6 +625,46 @@ class AslCitizenTests(unittest.TestCase):
             found = asl_citizen.find_split_csvs(root)
             self.assertEqual([path.name for path in found], ["train.csv"])
             self.assertEqual(asl_citizen.read_rows(found)[0]["sourceGloss"], "YES")
+
+    def test_split_participant_sets_include_unmapped_signers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            train = Path(temp_dir) / "train.csv"
+            with train.open("w", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["Participant ID", "Video file", "Gloss"])
+                writer.writerow(["P1", "a.mp4", "APPLE"])
+            found = asl_citizen.participants_by_split({str(train): "unused"})
+            self.assertEqual(found["train.csv"], ["P1"])
+
+    def test_video_index_includes_sibling_videos_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            splits = root / "splits"
+            videos = root / "videos"
+            splits.mkdir()
+            videos.mkdir()
+            (videos / "155-YES.mp4").write_bytes(b"clip")
+            found = asl_citizen.index_videos(asl_citizen.video_index_roots(splits))
+            self.assertEqual(found["155-YES.mp4"], videos / "155-YES.mp4")
+
+    def test_train_only_signer_is_ineligible_and_incomplete_test_signer_is_in_neither_pool(self) -> None:
+        rows = []
+        for label in ("yes", "no"):
+            rows.append({"participantId": "train-only", "label": label, "sourceCsv": "train.csv"})
+            rows.append({"participantId": "complete", "label": label, "sourceCsv": "test.csv"})
+        rows.append({"participantId": "missing-no", "label": "yes", "sourceCsv": "test.csv"})
+
+        selected, eligible = asl_citizen.select_test_signers(rows, seed=603, count=1)
+        self.assertEqual(eligible, ["complete"])
+        self.assertEqual(selected, ["complete"])
+        self.assertNotIn("train-only", eligible)
+
+        pools = asl_citizen.official_split_pools(rows, seed=603, count=1)
+        self.assertIn("train-only", pools["trainValParticipants"])
+        self.assertNotIn("missing-no", pools["selected"])
+        self.assertNotIn("missing-no", pools["trainValParticipants"])
+        self.assertEqual(pools["excluded"], ["missing-no"])
+        self.assertEqual(pools["excludedCount"], 1)
 
 
 class DecisionTests(unittest.TestCase):

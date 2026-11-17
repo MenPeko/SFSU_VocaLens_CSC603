@@ -1,0 +1,575 @@
+{
+  "createdAt": "2026-11-17T00:12:49.739047+00:00",
+  "currentExtractorVersion": "mediapipe-holistic-js@0.5.1675471629+schema-v2",
+  "classes": [
+    "wait",
+    "help",
+    "yes",
+    "no",
+    "stop",
+    "again",
+    "thank_you",
+    "please"
+  ],
+  "sources": [
+    {
+      "name": "own-flat",
+      "description": "data/sign-samples/<label>/: legacy flat layout, no session or signer fields",
+      "clips": 372,
+      "perLabel": {
+        "wait": 6,
+        "help": 51,
+        "yes": 50,
+        "no": 51,
+        "stop": 51,
+        "again": 50,
+        "thank_you": 51,
+        "please": 62
+      },
+      "largestToSmallestRatio": 10.333,
+      "extractorVersions": {
+        "mediapipe-holistic-js@0.5.1675471629+schema-v1": 366,
+        "mediapipe-holistic-js@0.5.1675471629+schema-v2": 6
+      },
+      "extractorVersionsByLabel": {
+        "again": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 50
+        },
+        "help": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 51
+        },
+        "no": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 51
+        },
+        "please": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 62
+        },
+        "stop": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 51
+        },
+        "thank_you": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 51
+        },
+        "wait": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 6
+        },
+        "yes": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 50
+        }
+      },
+      "uniqueSigners": null,
+      "sessions": null,
+      "recordingDays": 4,
+      "framesPerClip": {
+        "min": 4,
+        "p50": 18.0,
+        "mean": 20.059,
+        "max": 48
+      },
+      "durationMs": {
+        "min": 688.0,
+        "p50": 1313.5,
+        "mean": 1538.669,
+        "max": 6754.0
+      },
+      "effectiveFps": {
+        "min": 1.282,
+        "p50": 12.825,
+        "mean": 12.959,
+        "max": 20.241
+      },
+      "clipsUnderMinFrames": 1,
+      "landmarkLayout": {
+        "poseKeysPresentFrames": {
+          "nose": 7462,
+          "leftShoulder": 7462,
+          "rightShoulder": 7462,
+          "leftElbow": 7462,
+          "rightElbow": 7462,
+          "leftWrist": 7462,
+          "rightWrist": 7462
+        },
+        "handPointCounts": {
+          "21": 9743
+        },
+        "faceSubsetSizes": {
+          "leftEyebrow": {
+            "0": 133,
+            "5": 7329
+          },
+          "rightEyebrow": {
+            "0": 133,
+            "5": 7329
+          },
+          "leftEye": {
+            "0": 133,
+            "6": 7329
+          },
+          "rightEye": {
+            "0": 133,
+            "6": 7329
+          },
+          "lips": {
+            "0": 133,
+            "12": 7329
+          }
+        }
+      },
+      "missingLandmarks": {
+        "frames": 7462,
+        "leftHandPresent": 0.3754,
+        "rightHandPresent": 0.9303,
+        "bothHandsPresent": 0.3057,
+        "noHandPresent": 0.0,
+        "partialHand": 0.0,
+        "anyArmJointMissing": 0.0,
+        "lipsMissing": 0.0178,
+        "clipsWithoutAnyHand": 0
+      },
+      "rightHandDominantShare": {
+        "again": {
+          "share": 0.938,
+          "clips": 48
+        },
+        "help": {
+          "share": 0.818,
+          "clips": 44
+        },
+        "no": {
+          "share": 0.961,
+          "clips": 51
+        },
+        "please": {
+          "share": 0.984,
+          "clips": 62
+        },
+        "stop": {
+          "share": 0.489,
+          "clips": 45
+        },
+        "thank_you": {
+          "share": 1.0,
+          "clips": 51
+        },
+        "wait": {
+          "share": 1.0,
+          "clips": 6
+        },
+        "yes": {
+          "share": 1.0,
+          "clips": 50
+        }
+      },
+      "schemaValidationFailures": 0,
+      "trainingIneligible": {},
+      "exactDuplicateCopies": 0,
+      "rgbGridThumbnails": 372,
+      "skeletonGridThumbnails": 372
+    },
+    {
+      "name": "own-sessions",
+      "description": "data/sign-samples/sessions/<id>/: schema-v2 session layout used by the held-out harness",
+      "clips": 0,
+      "perLabel": {
+        "wait": 0,
+        "help": 0,
+        "yes": 0,
+        "no": 0,
+        "stop": 0,
+        "again": 0,
+        "thank_you": 0,
+        "please": 0
+      },
+      "largestToSmallestRatio": null,
+      "extractorVersions": {},
+      "extractorVersionsByLabel": {},
+      "uniqueSigners": null,
+      "sessions": null,
+      "recordingDays": null,
+      "framesPerClip": null,
+      "durationMs": null,
+      "effectiveFps": null,
+      "clipsUnderMinFrames": 0,
+      "landmarkLayout": {
+        "poseKeysPresentFrames": {},
+        "handPointCounts": {},
+        "faceSubsetSizes": {}
+      },
+      "missingLandmarks": {
+        "frames": 0,
+        "leftHandPresent": null,
+        "rightHandPresent": null,
+        "bothHandsPresent": null,
+        "noHandPresent": null,
+        "partialHand": null,
+        "anyArmJointMissing": null,
+        "lipsMissing": null,
+        "clipsWithoutAnyHand": 0
+      },
+      "rightHandDominantShare": {},
+      "schemaValidationFailures": 0,
+      "trainingIneligible": {},
+      "exactDuplicateCopies": 0,
+      "rgbGridThumbnails": 0,
+      "skeletonGridThumbnails": 0
+    },
+    {
+      "name": "own-archive",
+      "description": "data/sign-samples-archive/: clips set aside by hand; never loaded by the trainer",
+      "clips": 50,
+      "perLabel": {
+        "wait": 50,
+        "help": 0,
+        "yes": 0,
+        "no": 0,
+        "stop": 0,
+        "again": 0,
+        "thank_you": 0,
+        "please": 0
+      },
+      "largestToSmallestRatio": 1.0,
+      "extractorVersions": {
+        "mediapipe-holistic-js@0.5.1675471629+schema-v1": 50
+      },
+      "extractorVersionsByLabel": {
+        "wait": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v1": 50
+        }
+      },
+      "uniqueSigners": null,
+      "sessions": null,
+      "recordingDays": 1,
+      "framesPerClip": {
+        "min": 9,
+        "p50": 27.0,
+        "mean": 27.68,
+        "max": 48
+      },
+      "durationMs": {
+        "min": 550.0,
+        "p50": 1686.0,
+        "mean": 1724.02,
+        "max": 3198.0
+      },
+      "effectiveFps": {
+        "min": 8.511,
+        "p50": 15.64,
+        "mean": 15.594,
+        "max": 20.053
+      },
+      "clipsUnderMinFrames": 0,
+      "landmarkLayout": {
+        "poseKeysPresentFrames": {
+          "nose": 1384,
+          "leftShoulder": 1384,
+          "rightShoulder": 1384,
+          "leftElbow": 1384,
+          "rightElbow": 1384,
+          "leftWrist": 1384,
+          "rightWrist": 1384
+        },
+        "handPointCounts": {
+          "21": 2541
+        },
+        "faceSubsetSizes": {
+          "leftEyebrow": {
+            "0": 204,
+            "5": 1180
+          },
+          "rightEyebrow": {
+            "0": 204,
+            "5": 1180
+          },
+          "leftEye": {
+            "0": 204,
+            "6": 1180
+          },
+          "rightEye": {
+            "0": 204,
+            "6": 1180
+          },
+          "lips": {
+            "0": 204,
+            "12": 1180
+          }
+        }
+      },
+      "missingLandmarks": {
+        "frames": 1384,
+        "leftHandPresent": 0.9429,
+        "rightHandPresent": 0.8931,
+        "bothHandsPresent": 0.836,
+        "noHandPresent": 0.0,
+        "partialHand": 0.0,
+        "anyArmJointMissing": 0.0,
+        "lipsMissing": 0.1474,
+        "clipsWithoutAnyHand": 0
+      },
+      "rightHandDominantShare": {
+        "wait": {
+          "share": 0.372,
+          "clips": 43
+        }
+      },
+      "schemaValidationFailures": 0,
+      "trainingIneligible": {},
+      "exactDuplicateCopies": 0,
+      "rgbGridThumbnails": 50,
+      "skeletonGridThumbnails": 50
+    },
+    {
+      "name": "asl-citizen (mediapipe-holistic-js@0.5.1675471629+schema-v2)",
+      "description": "data/landmarks/asl-citizen/: offline extraction with the app's browser extractor",
+      "clips": 230,
+      "perLabel": {
+        "wait": 28,
+        "help": 31,
+        "yes": 28,
+        "no": 27,
+        "stop": 31,
+        "again": 25,
+        "thank_you": 29,
+        "please": 31
+      },
+      "largestToSmallestRatio": 1.24,
+      "extractorVersions": {
+        "mediapipe-holistic-js@0.5.1675471629+schema-v2": 230
+      },
+      "extractorVersionsByLabel": {
+        "wait": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 28
+        },
+        "help": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 31
+        },
+        "thank_you": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 29
+        },
+        "no": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 27
+        },
+        "yes": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 28
+        },
+        "please": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 31
+        },
+        "stop": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 31
+        },
+        "again": {
+          "mediapipe-holistic-js@0.5.1675471629+schema-v2": 25
+        }
+      },
+      "uniqueSigners": 43,
+      "sessions": null,
+      "recordingDays": null,
+      "framesPerClip": {
+        "min": 7,
+        "p50": 25.0,
+        "mean": 26.591,
+        "max": 48
+      },
+      "durationMs": {
+        "min": 500.0,
+        "p50": 1041.0,
+        "mean": 1138.27,
+        "max": 4000.0
+      },
+      "effectiveFps": {
+        "min": 9.6,
+        "p50": 23.992,
+        "mean": 22.91,
+        "max": 24.03
+      },
+      "clipsUnderMinFrames": 0,
+      "landmarkLayout": {
+        "poseKeysPresentFrames": {
+          "nose": 6116,
+          "leftShoulder": 6116,
+          "rightShoulder": 6116,
+          "leftElbow": 6116,
+          "rightElbow": 6116,
+          "leftWrist": 6116,
+          "rightWrist": 6116
+        },
+        "handPointCounts": {
+          "21": 8227
+        },
+        "faceSubsetSizes": {
+          "leftEyebrow": {
+            "0": 1,
+            "5": 6115
+          },
+          "rightEyebrow": {
+            "0": 1,
+            "5": 6115
+          },
+          "leftEye": {
+            "0": 1,
+            "6": 6115
+          },
+          "rightEye": {
+            "0": 1,
+            "6": 6115
+          },
+          "lips": {
+            "0": 1,
+            "12": 6115
+          }
+        }
+      },
+      "missingLandmarks": {
+        "frames": 6116,
+        "leftHandPresent": 0.5334,
+        "rightHandPresent": 0.8118,
+        "bothHandsPresent": 0.3452,
+        "noHandPresent": 0.0,
+        "partialHand": 0.0,
+        "anyArmJointMissing": 0.0,
+        "lipsMissing": 0.0002,
+        "clipsWithoutAnyHand": 0
+      },
+      "rightHandDominantShare": {
+        "again": {
+          "share": 0.591,
+          "clips": 22
+        },
+        "help": {
+          "share": 0.71,
+          "clips": 31
+        },
+        "no": {
+          "share": 0.741,
+          "clips": 27
+        },
+        "please": {
+          "share": 0.742,
+          "clips": 31
+        },
+        "stop": {
+          "share": 0.679,
+          "clips": 28
+        },
+        "thank_you": {
+          "share": 0.724,
+          "clips": 29
+        },
+        "wait": {
+          "share": 0.593,
+          "clips": 27
+        },
+        "yes": {
+          "share": 0.714,
+          "clips": 28
+        }
+      },
+      "schemaValidationFailures": 0,
+      "trainingIneligible": {},
+      "exactDuplicateCopies": 0,
+      "rgbGridThumbnails": 0,
+      "skeletonGridThumbnails": 0
+    }
+  ],
+  "ownFlatRecordingBlocks": [
+    {
+      "label": "help",
+      "clips": 51,
+      "day": "2026-04-14",
+      "minutes": 6.0
+    },
+    {
+      "label": "yes",
+      "clips": 50,
+      "day": "2026-04-14",
+      "minutes": 5.8
+    },
+    {
+      "label": "no",
+      "clips": 51,
+      "day": "2026-04-14",
+      "minutes": 5.9
+    },
+    {
+      "label": "stop",
+      "clips": 51,
+      "day": "2026-04-14",
+      "minutes": 4.9
+    },
+    {
+      "label": "again",
+      "clips": 50,
+      "day": "2026-04-14",
+      "minutes": 4.6
+    },
+    {
+      "label": "thank_you",
+      "clips": 51,
+      "day": "2026-04-14",
+      "minutes": 5.9
+    },
+    {
+      "label": "please",
+      "clips": 50,
+      "day": "2026-04-14",
+      "minutes": 4.9
+    },
+    {
+      "label": "please",
+      "clips": 10,
+      "day": "2026-04-15",
+      "minutes": 1.1
+    },
+    {
+      "label": "please",
+      "clips": 2,
+      "day": "2026-04-15",
+      "minutes": 0.1
+    },
+    {
+      "label": "wait",
+      "clips": 1,
+      "day": "2026-04-21",
+      "minutes": 0.0
+    },
+    {
+      "label": "wait",
+      "clips": 5,
+      "day": "2026-04-22",
+      "minutes": 2.3
+    }
+  ],
+  "ownSessions": [
+    {
+      "role": "train",
+      "extractorVersion": "mediapipe-holistic-js@0.5.1675471629+schema-v2",
+      "clips": 0
+    },
+    {
+      "role": "validation",
+      "extractorVersion": "mediapipe-holistic-js@0.5.1675471629+schema-v2",
+      "clips": 0
+    },
+    {
+      "role": "test",
+      "extractorVersion": "mediapipe-holistic-js@0.5.1675471629+schema-v2",
+      "clips": 0
+    }
+  ],
+  "aslCitizenClipsByOfficialSplit": {
+    "test.csv": 89,
+    "train.csv": 110,
+    "val.csv": 31
+  },
+  "rawVideo": {
+    "ownRecordingsVideoFiles": 0,
+    "ownRecordingsStoredMedia": "4x4 RGB grid JPEG and skeleton grid per clip (16 thumbnails), not video",
+    "aslCitizenVideoFilesOnDisk": 83399,
+    "aslCitizenExtractedClipsWithVideoOnDisk": 230
+  },
+  "trainableOnCurrentExtractor": {
+    "ownFlat": 6,
+    "ownSessions": 0,
+    "aslCitizen": 230
+  }
+}

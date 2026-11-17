@@ -13,13 +13,13 @@
       "please": "please"
     },
     "asl-citizen": {
-      "WAIT": "wait",
-      "HELP": "help",
       "YES": "yes",
+      "WAIT": "wait",
+      "THANKYOU": "thank_you",
       "NO": "no",
       "STOP": "stop",
       "AGAIN": "again",
-      "THANKYOU": "thank_you",
+      "HELP": "help",
       "PLEASE": "please"
     }
   }

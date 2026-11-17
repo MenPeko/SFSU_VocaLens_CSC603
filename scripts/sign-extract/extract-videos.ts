@@ -23,7 +23,31 @@ const DEFAULT_OUTPUT = join(APP_ROOT, "data/landmarks/asl-citizen", MEDIAPIPE_EX
 const FAILURES_PATH = join(APP_ROOT, "data/sign-eval/asl-citizen-extract-failures.jsonl")
 const SUMMARY_PATH = join(APP_ROOT, "data/sign-eval/asl-citizen-extract-summary.json")
 const MEDIAPIPE_DIR = join(APP_ROOT, "public/mediapipe")
+const SKELETON_DIR = join(APP_ROOT, "data/sign-reports")
 const VIDEO_TYPES: Record<string, string> = {".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm"}
+
+interface ClipReport {
+  label: string
+  sourceGloss: string
+  videoFile: string
+  decoded: boolean
+  kept: number
+  leftHandFrames: number
+  rightHandFrames: number
+  bothHandsFrames: number
+  error?: string
+}
+
+function writeSkeletonPng(dataUrl: string, filePath: string) {
+  const encoded = dataUrl.slice(dataUrl.indexOf(",") + 1)
+  mkdirSync(dirname(filePath), {recursive: true})
+  writeFileSync(filePath, Buffer.from(encoded, "base64"))
+}
+
+function bothHandsInMostFrames(report: ClipReport): string {
+  if (report.kept === 0) return "n/a"
+  return report.bothHandsFrames * 2 > report.kept ? "yes" : "no"
+}
 
 interface FilteredRow {
   participantId: string
@@ -176,6 +200,8 @@ async function main() {
     ...(options.executable ? {executablePath: options.executable} : {}),
   })
   const counts = {extracted: 0, noSequence: 0, failed: 0}
+  const clipReports: ClipReport[] = []
+  let skeletonPath = ""
   try {
     const page = await browser.newPage()
     await page.goto(`http://127.0.0.1:${server.port}/`)
@@ -187,10 +213,32 @@ async function main() {
     mkdirSync(dirname(FAILURES_PATH), {recursive: true})
 
     for (const [index, row] of pending.entries()) {
-      const result = (await page.evaluate((url) => window.extractClip!(url), `/video/${index}`)) as ClipExtraction
+      const result = (await page.evaluate(
+        ({url, skeleton}) => window.extractClip!(url, skeleton ? {skeleton: true} : undefined),
+        {url: `/video/${index}`, skeleton: skeletonPath === ""},
+      )) as ClipExtraction
       if (result.extractorVersion !== MEDIAPIPE_EXTRACTOR_VERSION) {
         throw new Error(`Page reported extractor ${result.extractorVersion}, expected ${MEDIAPIPE_EXTRACTOR_VERSION}`)
       }
+      if (result.skeletonPng && !skeletonPath) {
+        skeletonPath = join(SKELETON_DIR, `asl-citizen-smoke-${row.label}-skeleton.png`)
+        writeSkeletonPng(result.skeletonPng, skeletonPath)
+      }
+      const report: ClipReport = {
+        label: row.label,
+        sourceGloss: row.sourceGloss,
+        videoFile: row.videoFile,
+        decoded: result.decoded,
+        kept: result.landmarkSequence.length,
+        leftHandFrames: result.leftHandFrames,
+        rightHandFrames: result.rightHandFrames,
+        bothHandsFrames: result.bothHandsFrames,
+        error: result.error,
+      }
+      clipReports.push(report)
+      console.log(
+        `${report.label} ${report.videoFile} decoded=${report.decoded ? "yes" : "no"} kept=${report.kept} bothHands=${report.bothHandsFrames}/${report.kept} most=${bothHandsInMostFrames(report)}`,
+      )
       if (result.error || result.landmarkSequence.length === 0) {
         const reason = result.error ?? "no hand-visible sequence"
         if (result.error) counts.failed += 1
@@ -244,6 +292,13 @@ async function main() {
         "Playwright's bundled Chromium cannot decode H.264; rerun with --channel chrome if Google Chrome is installed.",
     )
   }
+  console.log("clip report:")
+  for (const report of clipReports) {
+    console.log(
+      `${report.label}\t${report.sourceGloss}\t${report.videoFile}\tdecoded=${report.decoded ? "yes" : "no"}\tkept=${report.kept}\tleft=${report.leftHandFrames}\tright=${report.rightHandFrames}\tboth=${report.bothHandsFrames}\tmostBothHands=${bothHandsInMostFrames(report)}${report.error ? `\terror=${report.error}` : ""}`,
+    )
+  }
+  if (skeletonPath) console.log(`skeleton ${skeletonPath}`)
 }
 
 main().catch((error) => {

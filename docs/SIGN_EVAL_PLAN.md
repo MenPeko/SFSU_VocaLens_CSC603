@@ -99,19 +99,22 @@ Signer `owner` means you. Test sessions from `owner` form test set **own-heldout
 
 ### 1b. ASL Citizen held-out signers
 
-- Input: the participant IDs in the ASL Citizen split CSVs (train, val, and test combined; the official splits are not used).
-- Eligible signers: those with at least one clip in every gloss that `gloss_map.json` maps for ASL Citizen.
-- Selection: sort the eligible IDs, then `random.Random(603).sample(eligible, k=10)`. Seed 603 and k = 10 are fixed in `sign_classifier_service/eval/config.json`.
-- Saved to `data/sign-eval/asl-citizen-test-signers.json`, along with the seed, k, the eligibility rule, the eligible count, and a SHA-256 of each CSV used. The file is gitignored, because signer IDs come from the dataset and `docs/DATA_LICENSES.md` keeps derived data local. Anyone can regenerate the same list from the committed seed and code.
+ASL Citizen uses its official splits. Training clips come only from `train.csv` and `val.csv`. Held-out evaluation clips are only the selected signers from `test.csv`.
+
+- Eligible signers: participants with at least one `test.csv` clip of every gloss that `gloss_map.json` maps for ASL Citizen. A signer who appears only in `train.csv` or `val.csv` is not eligible, and clips outside `test.csv` do not count.
+- Selection: sort the eligible IDs, then `random.Random(603).sample(eligible, k=10)`. Seed 603 and k = 10 are fixed in `sign_classifier_service/eval/config.json`. When 10 signers are eligible, the saved list is that whole set. The seed and the eligible count are still recorded.
+- A `test.csv` participant who does not have every mapped gloss is in neither the training set nor the held-out list. The signer file counts that participant as excluded.
+- Saved to `data/sign-eval/asl-citizen-test-signers.json`, along with the seed, k, the eligibility rule, the eligible count, the excluded count, the test-split participant set, the train/val participant set, and a SHA-256 of each CSV used. Those participant sets list every ID in `test.csv` and in `train.csv` plus `val.csv`, including signers with no mapped gloss. The file is gitignored, because signer IDs come from the dataset and `docs/DATA_LICENSES.md` keeps derived data local. Anyone can regenerate the same list from the committed seed and code.
 - After the file exists, the selection command refuses to regenerate it. Every run verifies that the CSV hashes still match and fails if they changed.
-- Test set name: **asl-citizen-heldout**. All other ASL Citizen signers can be used for training.
+- Test set name: **asl-citizen-heldout**.
+- The run fails if any training clip has a signer in the test-split participant set, or if a held-out signer appears in `train.csv` or `val.csv`. `check_disjoint` still fails when a held-out signer is present in the training examples.
 
 ## 2. Leak prevention (enforced in code)
 
 All checks live in `sign_classifier_service/eval/leakage.py`. They run before training. Any failure aborts the run with a non-zero exit code, writes `leak-check.json`, and trains nothing.
 
 - **Group split, never by clip.** Every example carries a group key: `asl-citizen:<participantId>` for ASL Citizen and `own:<sessionId>` for local recordings. Validation for training diagnostics uses whole groups (`group_split` in `train.py`). The harness never calls `stratified_split`, and a unit test asserts that.
-- **Test-signer check.** The run fails if any training example has an ASL Citizen participant ID in the held-out list.
+- **Test-signer check.** The run fails if any training clip has an ASL Citizen signer from the official test split, or if a held-out signer appears in `train.csv` or `val.csv`. `check_disjoint` still fails when a held-out signer is present in the training examples.
 - **Test-session check.** The run fails if any training example's session is a test session, or if a test session is listed in a training config.
 - **Signer check for teammates.** The run fails if a training example's signer belongs to the team test set.
 - **Extractor check.** The run fails if any example's stamp is not `mediapipe-holistic-js@0.5.1675471629+schema-v2`. This is how schema-v1 clips are excluded.

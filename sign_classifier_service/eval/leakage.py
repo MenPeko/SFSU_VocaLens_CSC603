@@ -137,6 +137,32 @@ def check_validation_disjoint(
     return failures
 
 
+def check_asl_official_splits(
+    train: Iterable[TrainingExample],
+    test_split_participants: set[str],
+    held_out_signers: set[str],
+    train_val_participants: set[str],
+) -> list[str]:
+    """Fail if training includes an official test-split signer, or a held-out signer is in train/val.
+
+    ``check_disjoint`` still rejects held-out signers that show up in the training examples.
+    """
+
+    failures: list[str] = []
+    hits = [
+        example
+        for example in train
+        if example.dataset == "asl-citizen" and example.signer_id in test_split_participants
+    ]
+    if hits:
+        names = sorted({example.signer_id for example in hits})
+        failures.append(f"{len(hits)} training clips come from ASL Citizen test-split signers {names}")
+    leaked = sorted(held_out_signers & train_val_participants)
+    if leaked:
+        failures.append(f"held-out ASL Citizen signers appear in train.csv or val.csv: {leaked}")
+    return failures
+
+
 def check_disjoint(
     train: list[TrainingExample],
     test_session_ids: set[str],

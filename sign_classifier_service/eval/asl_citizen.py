@@ -35,6 +35,9 @@ FILTER_SUMMARY_PATH = SIGN_EVAL_DATA_DIR / "asl-citizen-filter-summary.json"
 TEST_SIGNERS_PATH = SIGN_EVAL_DATA_DIR / "asl-citizen-test-signers.json"
 VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".mkv", ".avi"}
 FILTERED_COLUMNS = ["participantId", "videoFile", "sourceGloss", "label", "sourceCsv", "videoPath"]
+TRAIN_SOURCE_CSVS = frozenset({"train.csv", "val.csv"})
+TEST_SOURCE_CSV = "test.csv"
+SPLIT_SOURCE_CSVS = ("train.csv", "val.csv", "test.csv")
 
 
 class AslCitizenError(RuntimeError):
@@ -119,11 +122,26 @@ def gloss_candidates(rows: list[dict[str, str]], classes: list[str]) -> dict[str
     return result
 
 
-def index_videos(root: Path) -> dict[str, Path]:
+def video_index_roots(csv_root: Path) -> list[Path]:
+    """Directories whose video files can satisfy the split CSVs.
+
+    ``--root`` is often the splits folder. The clips live in the sibling
+    ``videos`` directory of the unpacked dataset.
+    """
+
+    roots = [csv_root]
+    sibling = csv_root.parent / "videos"
+    if sibling.is_dir() and sibling.resolve() != csv_root.resolve():
+        roots.append(sibling)
+    return roots
+
+
+def index_videos(roots: list[Path]) -> dict[str, Path]:
     index: dict[str, Path] = {}
-    for path in root.rglob("*"):
-        if path.suffix.lower() in VIDEO_SUFFIXES and path.is_file():
-            index.setdefault(path.name, path)
+    for root in roots:
+        for path in root.rglob("*"):
+            if path.suffix.lower() in VIDEO_SUFFIXES and path.is_file():
+                index.setdefault(path.name, path)
     return index
 
 
@@ -159,6 +177,9 @@ def filter_rows(
         }
     )
     per_label = Counter(row["label"] for row in kept)
+    per_split: dict[str, Counter[str]] = {label: Counter() for label in classes}
+    for row in kept:
+        per_split[row["label"]][row["sourceCsv"]] += 1
     summary = {
         "totalRows": len(rows),
         "mappedRows": len(kept),
@@ -166,29 +187,71 @@ def filter_rows(
         "droppedGlossCount": len(dropped),
         "topDroppedEnglishMatches": english_drops.most_common(20),
         "perLabel": {label: per_label.get(label, 0) for label in classes},
+        "perLabelBySplit": {
+            label: {split: per_split[label].get(split, 0) for split in SPLIT_SOURCE_CSVS} for label in classes
+        },
         "gaps": [label for label in classes if per_label.get(label, 0) == 0],
         "missingVideos": missing_videos,
     }
     return kept, summary
 
 
-def select_test_signers(rows: list[dict[str, str]], seed: int, count: int) -> tuple[list[str], list[str]]:
-    """Pick ``count`` signers who have at least one clip of every mapped class.
+def select_test_signers(
+    rows: list[dict[str, str]],
+    seed: int,
+    count: int,
+    required_labels: Optional[set[str]] = None,
+) -> tuple[list[str], list[str]]:
+    """Pick ``count`` signers from ``test.csv`` who have every mapped class there.
 
-    Returns ``(selected, eligible)``. Deterministic for a given row set and seed.
+    A signer who appears only in ``train.csv`` or ``val.csv`` is not eligible.
+    Labels on those rows do not count. Returns ``(selected, eligible)``.
+    Deterministic for a given row set and seed.
     """
 
-    mapped_labels = sorted({row["label"] for row in rows})
+    if required_labels is None:
+        required = {row["label"] for row in rows if row.get("label")}
+    else:
+        required = set(required_labels)
     labels_by_signer: dict[str, set[str]] = defaultdict(set)
     for row in rows:
+        if row.get("sourceCsv") != TEST_SOURCE_CSV:
+            continue
         labels_by_signer[row["participantId"]].add(row["label"])
-    eligible = sorted(signer for signer, labels in labels_by_signer.items() if set(mapped_labels) <= labels)
+    eligible = sorted(signer for signer, labels in labels_by_signer.items() if required <= labels)
     if len(eligible) < count:
         raise AslCitizenError(
-            f"Only {len(eligible)} signers have every mapped class; {count} test signers were requested."
+            f"Only {len(eligible)} test-split signers have every mapped class; {count} test signers were requested."
         )
     selected = sorted(random.Random(seed).sample(eligible, count))
     return selected, eligible
+
+
+def official_split_pools(
+    rows: list[dict[str, str]],
+    seed: int,
+    count: int,
+    required_labels: Optional[set[str]] = None,
+) -> dict[str, Any]:
+    """Held-out signers from ``test.csv``; training signers from ``train.csv`` and ``val.csv``.
+
+    A ``test.csv`` signer left out of the held-out list, including one who lacks
+    a mapped class, is in neither pool and is counted as excluded.
+    """
+
+    selected, eligible = select_test_signers(rows, seed, count, required_labels)
+    test_split = sorted({row["participantId"] for row in rows if row.get("sourceCsv") == TEST_SOURCE_CSV})
+    train_val = sorted({row["participantId"] for row in rows if row.get("sourceCsv") in TRAIN_SOURCE_CSVS})
+    selected_set = set(selected)
+    excluded = [signer for signer in test_split if signer not in selected_set]
+    return {
+        "selected": selected,
+        "eligible": eligible,
+        "testSplitParticipants": test_split,
+        "trainValParticipants": train_val,
+        "excluded": excluded,
+        "excludedCount": len(excluded),
+    }
 
 
 def _app_relative(path: Path) -> str:
@@ -218,6 +281,29 @@ def source_csv_hashes(csv_paths: list[Path]) -> dict[str, str]:
     return {_app_relative(path): sha256_file(path) for path in csv_paths}
 
 
+def participants_by_split(csv_hashes: dict[str, str]) -> dict[str, list[str]]:
+    """Every participant ID in each hashed split CSV, including unmapped glosses."""
+
+    participant_column, _, _ = _columns()
+    grouped: dict[str, set[str]] = defaultdict(set)
+    for relative in csv_hashes:
+        path = Path(relative) if Path(relative).is_absolute() else APP_ROOT / relative
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            for raw in csv.DictReader(handle):
+                record = {key.strip(): (value or "").strip() for key, value in raw.items() if key}
+                grouped[path.name].add(record[participant_column])
+    return {name: sorted(signers) for name, signers in grouped.items()}
+
+
+def source_csv_by_video(path: Path = FILTERED_CSV_PATH) -> dict[str, str]:
+    """Map a filtered video file name to its official split CSV."""
+
+    mapping: dict[str, str] = {}
+    for row in read_filtered_csv(path):
+        mapping[Path(row["videoFile"]).name] = row["sourceCsv"]
+    return mapping
+
+
 def write_test_signers(
     selected: list[str],
     eligible: list[str],
@@ -225,6 +311,9 @@ def write_test_signers(
     count: int,
     csv_hashes: dict[str, str],
     path: Path = TEST_SIGNERS_PATH,
+    test_split_participants: Optional[list[str]] = None,
+    train_val_participants: Optional[list[str]] = None,
+    excluded_count: int = 0,
 ) -> None:
     if path.exists():
         raise AslCitizenError(f"{path} already exists. The held-out signer list is fixed and is never regenerated.")
@@ -234,9 +323,12 @@ def write_test_signers(
             "dataset": DATASET,
             "seed": seed,
             "count": count,
-            "eligibilityRule": "signer has at least one clip of every class mapped in gloss_map.json",
+            "eligibilityRule": "test.csv signer has at least one clip of every class mapped in gloss_map.json",
             "eligibleCount": len(eligible),
+            "excludedCount": excluded_count,
             "testSigners": selected,
+            "testSplitParticipants": list(test_split_participants or []),
+            "trainValParticipants": list(train_val_participants or []),
             "sourceCsvSha256": csv_hashes,
             "createdAt": datetime.now(timezone.utc).isoformat(),
         },
@@ -305,15 +397,21 @@ def main() -> None:
             mapping = load_gloss_map().get(DATASET, {})
             if not mapping:
                 raise AslCitizenError("gloss_map.json has no asl-citizen entries yet. Run `glosses` and fill it in.")
-            kept, summary = filter_rows(rows, mapping, classes, index_videos(args.root))
+            kept, summary = filter_rows(rows, mapping, classes, index_videos(video_index_roots(args.root)))
             summary["sourceCsvSha256"] = source_csv_hashes(csv_paths)
             summary["glossMapSha256"] = sha256_file(GLOSS_MAP_PATH)
             write_filtered_csv(kept)
             write_json(FILTER_SUMMARY_PATH, summary)
             print(f"Kept {summary['mappedRows']} of {summary['totalRows']} clips; dropped {summary['droppedRows']}.")
             print("Per class: " + ", ".join(f"{label}={n}" for label, n in summary["perLabel"].items()))
+            for label, counts in summary["perLabelBySplit"].items():
+                print(
+                    f"  {label}: train={counts['train.csv']} val={counts['val.csv']} test={counts['test.csv']}"
+                )
             if summary["gaps"]:
                 print(f"Gaps (no ASL Citizen clips): {', '.join(summary['gaps'])}.")
+            else:
+                print("Gaps: none.")
             if summary["missingVideos"]:
                 print(f"WARNING: {summary['missingVideos']} mapped rows have no video file on disk.")
             return
@@ -321,15 +419,29 @@ def main() -> None:
         rows = read_filtered_csv()
         settings = load_config()["aslCitizen"]
         summary = read_json(FILTER_SUMMARY_PATH)
-        selected, eligible = select_test_signers(rows, settings["testSignerSeed"], settings["testSignerCount"])
+        required = set(load_gloss_map().get(DATASET, {}).values())
+        pools = official_split_pools(rows, settings["testSignerSeed"], settings["testSignerCount"], required)
+        by_split = participants_by_split(summary["sourceCsvSha256"])
+        test_split = by_split.get(TEST_SOURCE_CSV, [])
+        train_val = sorted(set(by_split.get("train.csv", [])) | set(by_split.get("val.csv", [])))
+        selected_set = set(pools["selected"])
+        excluded = sum(1 for signer in test_split if signer not in selected_set)
         write_test_signers(
-            selected,
-            eligible,
+            pools["selected"],
+            pools["eligible"],
             settings["testSignerSeed"],
             settings["testSignerCount"],
             summary["sourceCsvSha256"],
+            test_split_participants=test_split,
+            train_val_participants=train_val,
+            excluded_count=excluded,
         )
-        print(f"Saved {len(selected)} held-out signers (of {len(eligible)} eligible) to {TEST_SIGNERS_PATH}.")
+        excluded_word = "signer" if excluded == 1 else "signers"
+        print(
+            f"Saved {len(pools['selected'])} held-out signers "
+            f"(of {len(pools['eligible'])} eligible). "
+            f"Excluded {excluded} test-split {excluded_word}."
+        )
     except AslCitizenError as error:
         raise SystemExit(str(error))
 

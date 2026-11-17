@@ -27,6 +27,7 @@ import {
   landmarkIntervalMs,
 } from "../../sign/capture-config"
 import {MEDIAPIPE_EXTRACTOR_VERSION} from "../../sign/extractor-version"
+import {LandmarkListSmoother} from "../../sign/one-euro"
 import {appendRollingWindow, computeSequenceDurationMs} from "../../sign/sequence"
 import {
   DEFAULT_SIGN_CAPTURE_SETTINGS,
@@ -179,6 +180,7 @@ export interface UseSignLanguageResult {
   captureSettingsStatus: CaptureSettingsStatus
   captureSettingsFallbackReason?: CaptureSettingsFallbackReason
   droppedFrameCount: number
+  trackingConfidenceExperiment: number | null
   restart: () => Promise<void>
   stop: () => Promise<void>
   clearSequence: () => void
@@ -188,6 +190,7 @@ interface SkeletonRenderOptions {
   renderMode?: SkeletonRenderMode
   showHandednessOverlay?: boolean
   mirrorOverlayText?: boolean
+  maskOccludedFace?: boolean
 }
 
 export function buildVideoSourceKey(videoSource: SignVideoSource): string {
@@ -398,6 +401,87 @@ const REMOTE_DRIFT_CHECK_INTERVAL_MS = 1000
 const HLS_DRIFT_SEEK_THRESHOLD_S = 4
 const WEBRTC_DRIFT_SEEK_THRESHOLD_S = 2
 const CAPTURE_DRIFT_SEEK_THRESHOLD_S = 3
+
+const DROPPED_FRAME_STATE_INTERVAL_MS = 250
+const HOLISTIC_TIMING_WINDOW_FRAMES = 60
+const SIGN_TIMING_DEBUG_STORAGE_KEY = "sign:debug-timing"
+
+export interface HolisticTimingWindow {
+  count: number
+  totalMs: number
+  maxMs: number
+}
+
+export function createHolisticTimingWindow(): HolisticTimingWindow {
+  return {count: 0, totalMs: 0, maxMs: 0}
+}
+
+// Accumulates per-inference durations and returns a summary (then resets) once
+// every HOLISTIC_TIMING_WINDOW_FRAMES samples.
+export function recordHolisticTiming(
+  timing: HolisticTimingWindow,
+  durationMs: number,
+  windowFrames = HOLISTIC_TIMING_WINDOW_FRAMES,
+): {averageMs: number; maxMs: number; count: number} | null {
+  timing.count += 1
+  timing.totalMs += durationMs
+  timing.maxMs = Math.max(timing.maxMs, durationMs)
+
+  if (timing.count < windowFrames) {
+    return null
+  }
+
+  const summary = {averageMs: timing.totalMs / timing.count, maxMs: timing.maxMs, count: timing.count}
+  timing.count = 0
+  timing.totalMs = 0
+  timing.maxMs = 0
+  return summary
+}
+
+function createOverlaySmoothers() {
+  return {
+    pose: new LandmarkListSmoother(),
+    face: new LandmarkListSmoother(),
+    leftHand: new LandmarkListSmoother(),
+    rightHand: new LandmarkListSmoother(),
+  }
+}
+
+const TRACKING_CONFIDENCE_EXPERIMENT_STORAGE_KEY = "sign:experiment-tracking-confidence"
+
+// Local-only experiment: overrides HOLISTIC_OPTIONS.minTrackingConfidence for
+// the live hook. Payloads get a distinct extractor stamp so the classifier and
+// trainer reject them instead of mixing them with schema-locked samples.
+export function parseTrackingConfidenceExperiment(value: string | null): number | null {
+  if (value === null || value.trim() === "") {
+    return null
+  }
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 && parsed < 1 ? parsed : null
+}
+
+export function experimentExtractorVersion(trackingConfidence: number | null): string {
+  return trackingConfidence === null
+    ? MEDIAPIPE_EXTRACTOR_VERSION
+    : `${MEDIAPIPE_EXTRACTOR_VERSION}+exp-tracking-${trackingConfidence}`
+}
+
+function readTrackingConfidenceExperiment(): number | null {
+  try {
+    return parseTrackingConfidenceExperiment(window.localStorage.getItem(TRACKING_CONFIDENCE_EXPERIMENT_STORAGE_KEY))
+  } catch {
+    return null
+  }
+}
+
+function isSignTimingDebugEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(SIGN_TIMING_DEBUG_STORAGE_KEY) === "1"
+  } catch {
+    return false
+  }
+}
 
 function clearRemoteDriftInterval(ref: {current: number | null}): void {
   if (ref.current !== null) {
@@ -873,6 +957,62 @@ function buildHandednessLabels(hands: DetectedHand[]): string[] {
   return hands.map((hand) => `${hand.label.toUpperCase()} HAND`)
 }
 
+export interface LandmarkRegion {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
+const HAND_REGION_PADDING = 0.25
+const FACE_OCCLUSION_HIDE_FRACTION = 0.4
+const OCCLUDED_FACE_ALPHA = 0.35
+
+// Padded bounding boxes around each detected hand, in normalized coordinates.
+export function computeHandRegions(
+  frame: Pick<HolisticFrameDrawingData, "leftHandLandmarks" | "rightHandLandmarks">,
+  padding = HAND_REGION_PADDING,
+): LandmarkRegion[] {
+  const regions: LandmarkRegion[] = []
+
+  for (const hand of [frame.leftHandLandmarks, frame.rightHandLandmarks]) {
+    if (!hand.length) {
+      continue
+    }
+
+    const xs = hand.map((landmark) => landmark.x)
+    const ys = hand.map((landmark) => landmark.y)
+    const minX = Math.min(...xs)
+    const maxX = Math.max(...xs)
+    const minY = Math.min(...ys)
+    const maxY = Math.max(...ys)
+    const padX = (maxX - minX) * padding
+    const padY = (maxY - minY) * padding
+
+    regions.push({minX: minX - padX, minY: minY - padY, maxX: maxX + padX, maxY: maxY + padY})
+  }
+
+  return regions
+}
+
+export function isInsideRegions(landmark: NormalizedLandmark, regions: LandmarkRegion[]): boolean {
+  return regions.some(
+    (region) =>
+      landmark.x >= region.minX && landmark.x <= region.maxX && landmark.y >= region.minY && landmark.y <= region.maxY,
+  )
+}
+
+// Fraction of face landmarks covered by a hand. Holistic keeps predicting the
+// full face mesh under occlusion, so covered points are unreliable.
+export function computeFaceOcclusion(faceLandmarks: NormalizedLandmarkList, handRegions: LandmarkRegion[]): number {
+  if (!faceLandmarks.length || !handRegions.length) {
+    return 0
+  }
+
+  const covered = faceLandmarks.filter((landmark) => landmark && isInsideRegions(landmark, handRegions)).length
+  return covered / faceLandmarks.length
+}
+
 function drawConnections(
   context: CanvasRenderingContext2D,
   landmarks: NormalizedLandmarkList,
@@ -881,6 +1021,7 @@ function drawConnections(
   height: number,
   lineWidth: number,
   color: string,
+  skip?: (landmark: NormalizedLandmark) => boolean,
 ): void {
   context.strokeStyle = color
   context.lineWidth = lineWidth
@@ -888,7 +1029,7 @@ function drawConnections(
   for (const [startIndex, endIndex] of connections) {
     const start = landmarks[startIndex]
     const end = landmarks[endIndex]
-    if (!start || !end) {
+    if (!start || !end || skip?.(start) || skip?.(end)) {
       continue
     }
 
@@ -906,10 +1047,14 @@ function drawLandmarks(
   height: number,
   radius: number,
   color: string,
+  skip?: (landmark: NormalizedLandmark) => boolean,
 ): void {
   context.fillStyle = color
 
   for (const landmark of landmarks) {
+    if (skip?.(landmark)) {
+      continue
+    }
     context.beginPath()
     context.arc(landmark.x * width, landmark.y * height, radius, 0, Math.PI * 2)
     context.fill()
@@ -1043,10 +1188,27 @@ function renderHolisticSkeletonToContext(
     FACEMESH_RIGHT_EYE,
     FACEMESH_LIPS,
   ]
-  for (const connectionSet of faceConnectionSets) {
-    drawConnections(context, frame.faceLandmarks, connectionSet, width, height, Math.max(1.2, lineWidth * 0.7), "#ffffff")
+  const handRegions = options?.maskOccludedFace ? computeHandRegions(frame) : []
+  const faceOcclusion = computeFaceOcclusion(frame.faceLandmarks, handRegions)
+  if (faceOcclusion < FACE_OCCLUSION_HIDE_FRACTION) {
+    const skipOccluded =
+      faceOcclusion > 0 ? (landmark: NormalizedLandmark) => isInsideRegions(landmark, handRegions) : undefined
+    context.globalAlpha = faceOcclusion > 0 ? OCCLUDED_FACE_ALPHA : 1
+    for (const connectionSet of faceConnectionSets) {
+      drawConnections(
+        context,
+        frame.faceLandmarks,
+        connectionSet,
+        width,
+        height,
+        Math.max(1.2, lineWidth * 0.7),
+        "#ffffff",
+        skipOccluded,
+      )
+    }
+    drawLandmarks(context, frame.faceLandmarks, width, height, faceRadius, "#1e90ff", skipOccluded)
+    context.globalAlpha = 1
   }
-  drawLandmarks(context, frame.faceLandmarks, width, height, faceRadius, "#1e90ff")
 
   if (options?.showHandednessOverlay) {
     if (frame.leftHandLandmarks.length) {
@@ -1287,7 +1449,7 @@ export function useSignLanguage({
   canvasRef,
   gridCanvasRef,
   skeletonGridCanvasRef,
-  videoSource = {type: "device-camera", requestedQuality: "1080p"},
+  videoSource = {type: "device-camera", requestedQuality: "720p"},
   enabled = true,
   showHandednessOverlay = false,
   captureSettings = DEFAULT_SIGN_CAPTURE_SETTINGS,
@@ -1326,6 +1488,12 @@ export function useSignLanguage({
   const usingRemoteStreamRef = useRef(false)
   const holisticRef = useRef<Holistic | null>(null)
   const animationFrameRef = useRef<number | null>(null)
+  const videoFrameCallbackRef = useRef<{video: HTMLVideoElement; handle: number} | null>(null)
+  const droppedFrameIntervalRef = useRef<number | null>(null)
+  const holisticTimingRef = useRef(createHolisticTimingWindow())
+  const overlaySmoothersRef = useRef(createOverlaySmoothers())
+  const trackingExperimentRef = useRef<number | null>(null)
+  const [trackingConfidenceExperiment, setTrackingConfidenceExperiment] = useState<number | null>(null)
   const handsDownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const framesRef = useRef<HTMLCanvasElement[]>([])
   const skeletonFramesRef = useRef<HTMLCanvasElement[]>([])
@@ -1348,6 +1516,46 @@ export function useSignLanguage({
     setLatestSequence(payload)
     await onHandsDown?.(payload)
   })
+
+  // requestVideoFrameCallback fires once per decoded camera frame, so Holistic
+  // never re-processes a stale frame; requestAnimationFrame is the fallback.
+  const scheduleNextFrame = (video: HTMLVideoElement, callback: () => void) => {
+    if (typeof video.requestVideoFrameCallback === "function") {
+      videoFrameCallbackRef.current = {video, handle: video.requestVideoFrameCallback(callback)}
+      return
+    }
+
+    animationFrameRef.current = requestAnimationFrame(callback)
+  }
+
+  const cancelScheduledFrame = () => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+
+    const videoFrameCallback = videoFrameCallbackRef.current
+    if (videoFrameCallback) {
+      videoFrameCallback.video.cancelVideoFrameCallback?.(videoFrameCallback.handle)
+      videoFrameCallbackRef.current = null
+    }
+  }
+
+  const clearDroppedFrameInterval = () => {
+    if (droppedFrameIntervalRef.current !== null) {
+      window.clearInterval(droppedFrameIntervalRef.current)
+      droppedFrameIntervalRef.current = null
+    }
+  }
+
+  const startDroppedFrameInterval = () => {
+    clearDroppedFrameInterval()
+    droppedFrameIntervalRef.current = window.setInterval(() => {
+      setDroppedFrameCount((current) =>
+        current === droppedFrameCountRef.current ? current : droppedFrameCountRef.current,
+      )
+    }, DROPPED_FRAME_STATE_INTERVAL_MS)
+  }
 
   const clearHandsDownTimer = () => {
     if (handsDownTimeoutRef.current) {
@@ -1438,7 +1646,7 @@ export function useSignLanguage({
       sequenceDurationMs: computeSequenceDurationMs(frameTimestampsRef.current),
       sequenceFrameCount: landmarkFramesRef.current.length,
       source: getCaptureSource(videoSource),
-      extractorVersion: MEDIAPIPE_EXTRACTOR_VERSION,
+      extractorVersion: experimentExtractorVersion(trackingExperimentRef.current),
       requestedQuality,
       actualQuality: actualQualityForPayload,
       qualityFallback: qualityFallbackForPayload,
@@ -1454,11 +1662,8 @@ export function useSignLanguage({
   const stop = async () => {
     runIdRef.current += 1
     clearHandsDownTimer()
-
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current)
-      animationFrameRef.current = null
-    }
+    cancelScheduledFrame()
+    clearDroppedFrameInterval()
 
     inFlightRef.current = false
 
@@ -1580,8 +1785,9 @@ export function useSignLanguage({
           audio: false,
           video: {
             facingMode: "user",
-            width: {ideal: 1920},
-            height: {ideal: 1080},
+            width: {ideal: videoSource.requestedQuality === "1080p" ? 1920 : 1280},
+            height: {ideal: videoSource.requestedQuality === "1080p" ? 1080 : 720},
+            frameRate: {ideal: 30},
           },
         })
 
@@ -1624,7 +1830,20 @@ export function useSignLanguage({
         locateFile: (asset) => `/mediapipe/holistic/${asset}`,
       })
 
-      holistic.setOptions({...HOLISTIC_OPTIONS, modelComplexity: captureSettings.holisticModelComplexity})
+      const trackingExperiment = readTrackingConfidenceExperiment()
+      trackingExperimentRef.current = trackingExperiment
+      setTrackingConfidenceExperiment(trackingExperiment)
+      if (trackingExperiment !== null) {
+        console.warn(
+          `[SIGN_EXPERIMENT] minTrackingConfidence=${trackingExperiment} (default ${HOLISTIC_OPTIONS.minTrackingConfidence}); payloads stamped ${experimentExtractorVersion(trackingExperiment)}`,
+        )
+      }
+
+      holistic.setOptions({
+        ...HOLISTIC_OPTIONS,
+        modelComplexity: captureSettings.holisticModelComplexity,
+        ...(trackingExperiment !== null ? {minTrackingConfidence: trackingExperiment} : {}),
+      })
 
       holistic.onResults((results: Results) => {
         if (runId !== runIdRef.current || !mountedRef.current) {
@@ -1644,10 +1863,21 @@ export function useSignLanguage({
             handednessLabels: nextHandednessLabels,
           }
 
-          drawSkeleton(overlayCanvas, frame, {
+          const smoothedAt = performance.now()
+          const smoothers = overlaySmoothersRef.current
+          const displayFrame: HolisticFrameDrawingData = {
+            poseLandmarks: smoothers.pose.smooth(frame.poseLandmarks, smoothedAt),
+            faceLandmarks: smoothers.face.smooth(frame.faceLandmarks, smoothedAt),
+            leftHandLandmarks: smoothers.leftHand.smooth(frame.leftHandLandmarks, smoothedAt),
+            rightHandLandmarks: smoothers.rightHand.smooth(frame.rightHandLandmarks, smoothedAt),
+            handednessLabels: frame.handednessLabels,
+          }
+
+          drawSkeleton(overlayCanvas, displayFrame, {
             renderMode: "presentation",
             showHandednessOverlay: showHandednessOverlayRef.current,
             mirrorOverlayText: videoSource.type === "device-camera",
+            maskOccludedFace: true,
           })
 
           if (video.videoWidth > 0 && video.videoHeight > 0) {
@@ -1690,15 +1920,6 @@ export function useSignLanguage({
 
             clearHandsDownTimer()
 
-            const nextHints = estimateGestureHints(hands)
-            latestGestureHintsRef.current = nextHints
-
-            const nextSignature = nextHints.map((hint) => `${hint.name}:${hint.score.toFixed(1)}`).join("|")
-            if (gestureSignatureRef.current !== nextSignature) {
-              gestureSignatureRef.current = nextSignature
-              setGestureHints(nextHints)
-            }
-
             const now = performance.now()
             const lmInterval = landmarkIntervalMs(captureFps)
             const gInterval = gridIntervalMs(captureFps)
@@ -1706,6 +1927,17 @@ export function useSignLanguage({
 
             const landmarkReady = validDimensions && now - lastLandmarkCaptureAtRef.current >= lmInterval
             const gridReady = validDimensions && now - lastGridCaptureAtRef.current >= gInterval
+
+            if (gridReady) {
+              const nextHints = estimateGestureHints(hands)
+              latestGestureHintsRef.current = nextHints
+
+              const nextSignature = nextHints.map((hint) => `${hint.name}:${hint.score.toFixed(1)}`).join("|")
+              if (gestureSignatureRef.current !== nextSignature) {
+                gestureSignatureRef.current = nextSignature
+                setGestureHints(nextHints)
+              }
+            }
 
             if (landmarkReady || gridReady) {
               // Freshness gate: when consuming a remote glasses stream, skip
@@ -1769,9 +2001,11 @@ export function useSignLanguage({
             return
           }
 
-          gestureSignatureRef.current = ""
-          latestGestureHintsRef.current = []
-          setGestureHints([])
+          if (gestureSignatureRef.current !== "" || latestGestureHintsRef.current.length > 0) {
+            gestureSignatureRef.current = ""
+            latestGestureHintsRef.current = []
+            setGestureHints([])
+          }
 
           if (!captureSessionActiveRef.current || handsDownTimeoutRef.current) {
             return
@@ -1818,12 +2052,16 @@ export function useSignLanguage({
 
       setCameraState("ready")
 
+      holisticTimingRef.current = createHolisticTimingWindow()
+      overlaySmoothersRef.current = createOverlaySmoothers()
+      const timingDebugEnabled = isSignTimingDebugEnabled()
+
       const tick = () => {
         if (runId !== runIdRef.current) {
           return
         }
 
-        animationFrameRef.current = requestAnimationFrame(tick)
+        scheduleNextFrame(video, tick)
 
         const holistic = holisticRef.current
         const videoElement = videoRef.current
@@ -1834,7 +2072,6 @@ export function useSignLanguage({
 
         if (inFlightRef.current) {
           droppedFrameCountRef.current += 1
-          setDroppedFrameCount(droppedFrameCountRef.current)
           return
         }
 
@@ -1855,11 +2092,17 @@ export function useSignLanguage({
             setError(sendError instanceof Error ? sendError.message : "Holistic tracking failed.")
           })
           .finally(() => {
-            console.log(`[MP_TIMING][HOLISTIC] ${(performance.now() - holisticStartedAt).toFixed(1)}ms`)
+            const summary = recordHolisticTiming(holisticTimingRef.current, performance.now() - holisticStartedAt)
+            if (summary && (timingDebugEnabled || showHandednessOverlayRef.current)) {
+              console.log(
+                `[MP_TIMING][HOLISTIC] avg ${summary.averageMs.toFixed(1)}ms max ${summary.maxMs.toFixed(1)}ms over ${summary.count} frames, ${droppedFrameCountRef.current} dropped`,
+              )
+            }
             inFlightRef.current = false
           })
       }
 
+      startDroppedFrameInterval()
       tick()
     } catch (cameraError) {
       if (!mountedRef.current) {
@@ -1925,6 +2168,7 @@ export function useSignLanguage({
     captureSettingsStatus,
     captureSettingsFallbackReason,
     droppedFrameCount,
+    trackingConfidenceExperiment,
     restart,
     stop,
     clearSequence,

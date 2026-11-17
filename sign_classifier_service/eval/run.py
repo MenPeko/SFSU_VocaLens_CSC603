@@ -35,6 +35,7 @@ from . import (
 from . import asl_citizen
 from .leakage import (
     LeakReport,
+    check_asl_official_splits,
     check_disjoint,
     check_extractor,
     check_group_keys,
@@ -104,6 +105,7 @@ def assemble(
     asl_landmarks: Optional[Path] = None,
     asl_test_signers_path: Path = asl_citizen.TEST_SIGNERS_PATH,
     asl_filter_summary_path: Path = asl_citizen.FILTER_SUMMARY_PATH,
+    asl_filtered_csv_path: Path = asl_citizen.FILTERED_CSV_PATH,
 ) -> tuple[AssembledData, LeakReport]:
     report = LeakReport()
     sources = set(experiment["trainSources"])
@@ -160,6 +162,8 @@ def assemble(
     asl_train: list[TrainingExample] = []
     asl_test: list[TrainingExample] = []
     held_out: set[str] = set()
+    test_split_participants: set[str] = set()
+    train_val_participants: set[str] = set()
     provenance: dict[str, Any] = {
         "sessions": sessions_used,
         "glossMapSha256": sha256_file(GLOSS_MAP_PATH),
@@ -173,6 +177,8 @@ def assemble(
         try:
             signer_file = asl_citizen.load_test_signers(asl_test_signers_path)
             held_out = set(signer_file["testSigners"])
+            test_split_participants = set(signer_file.get("testSplitParticipants", []))
+            train_val_participants = set(signer_file.get("trainValParticipants", []))
             provenance["aslCitizenTestSignersSha256"] = sha256_file(asl_test_signers_path)
         except asl_citizen.AslCitizenError as error:
             if "asl-citizen" in sources:
@@ -190,7 +196,15 @@ def assemble(
         if held_out:
             asl_test = [example for example in asl_examples if example.signer_id in held_out]
             if "asl-citizen" in sources:
-                asl_train = [example for example in asl_examples if example.signer_id not in held_out]
+                if not asl_filtered_csv_path.exists():
+                    report.fail(f"{asl_filtered_csv_path} is missing; run `asl_citizen filter` before training")
+                else:
+                    by_video = asl_citizen.source_csv_by_video(asl_filtered_csv_path)
+                    asl_train = [
+                        example
+                        for example in asl_examples
+                        if by_video.get(Path(example.source_video_id).name) in asl_citizen.TRAIN_SOURCE_CSVS
+                    ]
 
     train = own_train + asl_train
     tests = {OWN_TEST: own_test, ASL_TEST: asl_test, TEAM_TEST: team_test}
@@ -198,6 +212,7 @@ def assemble(
 
     report.extend(check_extractor(everything, config["requiredExtractorVersion"]))
     report.extend(check_group_keys(everything))
+    report.extend(check_asl_official_splits(train, test_split_participants, held_out, train_val_participants))
     report.extend(check_disjoint(train, test_session_ids, {"asl-citizen": held_out, "own": team_signers}))
     report.extend(check_train_test_groups(train, tests))
     report.extend(check_validation_disjoint(train, own_validation, tests, validation_session_ids))
@@ -467,6 +482,7 @@ def run_experiment(
     asl_landmarks: Optional[Path] = None,
     asl_test_signers_path: Path = asl_citizen.TEST_SIGNERS_PATH,
     asl_filter_summary_path: Path = asl_citizen.FILTER_SUMMARY_PATH,
+    asl_filtered_csv_path: Path = asl_citizen.FILTERED_CSV_PATH,
     experiments_dir: Path = EXPERIMENTS_DIR,
     run_id: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -480,6 +496,7 @@ def run_experiment(
         asl_landmarks=asl_landmarks,
         asl_test_signers_path=asl_test_signers_path,
         asl_filter_summary_path=asl_filter_summary_path,
+        asl_filtered_csv_path=asl_filtered_csv_path,
     )
 
     own_train = [example for example in data.train if example.dataset == "own"]

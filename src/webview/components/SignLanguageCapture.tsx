@@ -383,7 +383,7 @@ export function SignLanguageCapture({
         actualQuality: cameraStream?.actualQuality,
         qualityFallback: cameraStream?.qualityFallback,
       }
-    : {type: "device-camera", requestedQuality: "1080p"}
+    : {type: "device-camera", requestedQuality: "720p"}
   const captureEnabled =
     enabled &&
     captureSettingsStatus !== "loading" &&
@@ -465,6 +465,7 @@ export function SignLanguageCapture({
     actualInputWidth,
     actualInputHeight,
     droppedFrameCount,
+    trackingConfidenceExperiment,
     restart,
     stop,
   } = useSignLanguage({
@@ -721,6 +722,17 @@ export function SignLanguageCapture({
           </div>
         </div>
       </div>
+
+      {trackingConfidenceExperiment !== null && (
+        <div style={{...neo.infoBox, marginTop: "0.75rem", borderLeftColor: "#F59E0B", borderLeftWidth: "8px", background: "#FFFBEB"}}>
+          <p style={neo.label}>Tracking Experiment On</p>
+          <p style={{...neo.dimText, marginTop: "0.25rem"}}>
+            minTrackingConfidence is {trackingConfidenceExperiment}. The local classifier will reject these sequences and Gemini
+            will handle them; don't record training samples. Turn off with{" "}
+            <code>localStorage.removeItem("sign:experiment-tracking-confidence")</code> and restart the camera.
+          </p>
+        </div>
+      )}
 
       {streamMessage && (
         <div style={{...neo.infoBox, marginTop: "0.75rem"}}>

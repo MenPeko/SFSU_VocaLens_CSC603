@@ -96,6 +96,10 @@ The plan is in `docs/SIGN_EVAL_PLAN.md`. Code lives in `sign_classifier_service/
    bun run sign:eval-extract                                                  # headless Chromium, same extractor as the app
    ```
 
+   Held-out signers come only from the official `test.csv`. Training clips come only from `train.csv` and `val.csv`. `filter` records each clip's source CSV, and a run fails if the filtered CSV is missing when ASL Citizen is a training source.
+
+   The extractor prints one line per clip: decoded or not, frames kept, and left-, right-, and both-hand frame counts. At the end it prints the same table again. It also saves one skeleton image of the first clip to `data/sign-reports/asl-citizen-smoke-<label>-skeleton.png` (gitignored) as a visual check.
+
 3. Run experiments and refresh the summary:
 
    ```bash
@@ -105,6 +109,24 @@ The plan is in `docs/SIGN_EVAL_PLAN.md`. Code lives in `sign_classifier_service/
    ```
 
 Each run writes `data/sign-reports/eval/<runId>/` (gitignored) and a model under `models/sign/` (gitignored). It never changes `data/sign-models/active-model.json`. Any leak check failure aborts the run before training.
+
+## Dataset Audit And Baseline
+
+Two read-only commands describe the data and score the classifiers that already exist. Neither one trains a model for the app or changes the active model.
+
+```bash
+.venv/bin/python -m sign_classifier_service.eval.audit
+.venv/bin/python -m sign_classifier_service.eval.baseline
+```
+
+- `eval.audit` scans every landmark clip on disk: the flat `data/sign-samples/` layout, sessions, the archive, and extracted ASL Citizen landmarks. It reports clips per sign, extractor versions, sequence length, missing landmarks, handedness, and exact duplicates. It writes `reports/dataset-audit.json` and `reports/dataset-audit.md`.
+- `eval.baseline` runs both runtime classifier paths through the production `predict` and its thresholds: the cosine kNN plus heuristics, and the softmax artifact. It scores them on two protocols:
+  - `asl-citizen-signer-disjoint`: ASL Citizen train/val signers against the held-out test signers, assembled and leak-checked by `eval.run`.
+  - `own-v1-time-holdout`: the legacy schema-v1 own clips, split by capture time within each sign. This is one signer in one sitting, so treat it as an optimistic upper bound.
+
+  It reports accuracy and macro-F1 with group bootstrap intervals, per-sign recall and precision, confusion matrices, a confidence and margin threshold sweep, and latency. It also scores the active model on current live requests. It writes `reports/baseline-evaluation.json` and `reports/baseline-evaluation.md`.
+
+`reports/` is committed and holds aggregate numbers only, with no clip names, signer IDs, or landmarks. Rerun both commands after the data changes.
 
 ## Snapshot A Report
 

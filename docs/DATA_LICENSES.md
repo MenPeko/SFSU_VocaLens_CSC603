@@ -251,7 +251,8 @@ The root `.gitignore` now uses a stricter rule than the extension list above: ev
 These are the repository's choices. They do not add permissions or definitions the license text does not state. Where a clause above is **UNCLEAR**, the file stays off the public tree.
 
 - Landmarks, model weights, and evaluation outputs derived from ASL Citizen stay on the machine that produced them. `data/landmarks/` holds landmark files. `models/sign/` holds model weights. `data/sign-reports/` holds evaluation outputs. `data/sign-samples/` and `data/sign-samples-archive/` are ignored on the same rule so a dataset frame or landmark file in those trees is not committed. The only tracked file in each tree is `README.md`.
-- Dataset clips and frames are not shown in slides or reports. Anything a person can see uses the team's own camera recordings.
+- Committed summaries hold aggregate numbers only. `docs/SIGN_RESULTS.md`, `reports/dataset-audit.*`, and `reports/baseline-evaluation.*` contain counts, accuracies, and distributions. They contain no clip names, video IDs, signer IDs, session IDs, landmarks, or weights. Any new file under `reports/` follows the same rule.
+- Dataset clips and frames are not shown in slides or reports. Anything a person can see uses the team's own camera recordings. The ASL Citizen skeleton image that `sign:eval-extract` writes to `data/sign-reports/` is an extraction check. It stays local under the `data/sign-reports/` rule.
 - **Additional datasets (updated November 7, 2026).** Additional datasets, such as MS-ASL and Kaggle sign datasets, may be added one at a time. Each one is added only after it passes all of these checks:
   1. It is isolated-sign video. Static fingerspelling images are not used.
   2. Its glosses are mapped in `sign_classifier_service/eval/gloss_map.json`.

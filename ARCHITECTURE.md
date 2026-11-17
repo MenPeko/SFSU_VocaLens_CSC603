@@ -1,4 +1,4 @@
-# Whiteboard Reader TTS — Architecture & Troubleshooting
+# VocaLens — Architecture & Troubleshooting
 
 ## Overview
 
@@ -323,7 +323,7 @@ For the sign interpreter specifically, that means:
 
 ## Development Flow
 
-From `cloud/packages/apps/whiteboard-reader-tts`:
+From this repository:
 
 - `bun run dev`
   - runs the dual-server app locally

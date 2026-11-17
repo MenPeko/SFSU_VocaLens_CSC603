@@ -4,7 +4,7 @@ import {join} from "node:path"
 import {tmpdir} from "node:os"
 import {MEDIAPIPE_EXTRACTOR_VERSION} from "../../sign/extractor-version"
 
-const tempDataDir = mkdtempSync(join(tmpdir(), "whiteboard-reader-tts-sign-store-"))
+const tempDataDir = mkdtempSync(join(tmpdir(), "vocalens-sign-store-"))
 process.env.SIGN_TRAINING_DATA_DIR = tempDataDir
 
 const {saveSignTrainingSample, SignTrainingSampleValidationError} = await import("../sign-training-store")

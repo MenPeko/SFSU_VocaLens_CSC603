@@ -278,7 +278,7 @@ export class CaptionsApp extends AppServer {
       requestSignStreamSync(enabled)
     })
 
-    session.layouts.showTextWall("Whiteboard Reader ready. Press a glasses button to capture and read text.")
+    session.layouts.showTextWall("VocaLens ready. Press a glasses button to capture and read text.")
     sseManager.broadcast({type: "status", status: "ready", message: "Ready. Press glasses button to capture."})
     publishInactiveGlassesStreamState(
       desiredSignStreamEnabled

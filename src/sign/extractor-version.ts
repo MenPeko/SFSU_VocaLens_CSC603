@@ -24,7 +24,7 @@
  * A matching constant exists in
  * `sign_classifier_service/extractor_version.py` — keep them in sync.
  *
- * See whiteboard-reader-tts/DEVELOPMENT_ROADMAP.md — Milestone 1 task 2 and
+ * See DEVELOPMENT_ROADMAP.md — Milestone 1 task 2 and
  * Critical Risks #2 for the rationale.
  */
 export const MEDIAPIPE_EXTRACTOR_VERSION = "mediapipe-holistic-js@0.5.1675471629+schema-v2"

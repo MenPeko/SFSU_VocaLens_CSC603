@@ -1,4 +1,4 @@
-# Migration notes: whiteboard-reader-tts → TouchDesigner
+# Migration notes: VocaLens → TouchDesigner
 
 ## A. Summary
 

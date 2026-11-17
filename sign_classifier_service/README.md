@@ -1,6 +1,6 @@
 # Sign Classifier Service
 
-This service powers the local-first ASL core-sign classifier for `whiteboard-reader-tts`.
+This service powers the local-first ASL core-sign classifier for VocaLens.
 
 ## Runtime
 

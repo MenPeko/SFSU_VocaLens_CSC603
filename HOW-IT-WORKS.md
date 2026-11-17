@@ -1,6 +1,6 @@
 # How It Works: Bun 1.3 React App Serving
 
-This document explains how this Captions app uses Bun 1.3's built-in features to serve a React application with **zero build step**.
+This document explains how VocaLens uses Bun 1.3's built-in features to serve a React application with **zero build step**.
 
 ## Overview
 

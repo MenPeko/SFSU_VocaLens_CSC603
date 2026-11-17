@@ -6,13 +6,13 @@ Team: Calvin Phetsoumphou, Juan Navarro Jr, Prag Gupta
 
 Revision date: November 3, 2026
 
-This roadmap revises the approved VocaLens proposal. It keeps the original goals and dates. It updates the plan to build on the existing whiteboard-reader app, use the iPhone 13 and the Fujifilm X-T30, and use public data to improve accuracy.
+This roadmap revises the approved VocaLens proposal. It keeps the original goals and dates. It updates the plan to build on the existing VocaLens app, use the iPhone 13 and the Fujifilm X-T30, and use public data to improve accuracy.
 
 ## Purpose
 
 VocaLens is a hands-free visual assistant. A person points a camera, asks a spoken question, and hears a short answer. If the picture is too unclear to answer, the app says so.
 
-The team will extend the existing whiteboard-reader application instead of starting a new server. The phone remains the camera a person holds. An X-T30 on a tripod is the lab camera for demos and repeatable tests. Public data improves two separate pieces: the spoken visual answers, and the eight-sign classifier already in the repo.
+The team will extend the existing VocaLens application instead of starting a new server. The phone remains the camera a person holds. An X-T30 on a tripod is the lab camera for demos and repeatable tests. Public data improves two separate pieces: the spoken visual answers, and the eight-sign classifier already in the repo.
 
 ## What stays from the approved proposal
 

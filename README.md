@@ -1,10 +1,10 @@
-# Whiteboard Reader TTS MiniApp (VocaLens)
+# VocaLens
 
-A Mentra mini app for Mentra Live glasses, with a React webview on the phone. It has two modes:
+VocaLens is a Mentra mini app for Mentra Live glasses, with a React webview on the phone. It has two modes:
 
 - **Written Text** (`whiteboard`)
   - Short-press a glasses button. The app takes a photo, reads the text with Gemini, optionally translates it, and speaks it through the glasses.
-  - **VocaLens** questions run on the same page: press and hold to ask a spoken question about what the camera sees. The question is transcribed with Whisper, answered with Gemini, and read back.
+  - Spoken questions run on the same page: press and hold to ask about what the camera sees. The question is transcribed with Whisper, answered with Gemini, and read back.
 - **Live Sign** (`sign`)
   - The webview runs MediaPipe Holistic on the camera feed and recognizes eight ASL signs: wait, help, yes, no, stop, again, thank you, and please.
   - Recognition uses a local classifier service (`sign_classifier_service/`). When that service is unavailable or unsure, Gemini interprets the sign instead.
@@ -14,7 +14,7 @@ A Mentra mini app for Mentra Live glasses, with a React webview on the phone. It
 - Mentra Live glasses connected to the MentraOS phone app
 - A MiniApp registered in the Mentra console with `CAMERA` and `SPEAKER` permissions
 - Bun
-- A Gemini API key, and an OpenAI API key for VocaLens speech recognition
+- A Gemini API key, and an OpenAI API key for spoken questions
 - `ngrok` for `dev-start` (`brew install ngrok`)
 - Optional, for the local sign classifier: Python 3.9+ with a virtualenv at `.venv/`
 
@@ -28,7 +28,7 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-PACKAGE_NAME=com.yourname.whiteboardreader
+PACKAGE_NAME=com.yourname.vocalens
 MENTRAOS_API_KEY=your_api_key_from_console
 PORT=3333
 NODE_ENV=development

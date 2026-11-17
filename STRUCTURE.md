@@ -1,6 +1,6 @@
-# Captions App - Project Structure
+# VocaLens - Project Structure
 
-This document explains how the Captions app is structured as a unified Bun project.
+This document explains how VocaLens is structured as a unified Bun project.
 
 ## Overview
 

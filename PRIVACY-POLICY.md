@@ -1,9 +1,9 @@
-# GlossTrans Privacy Policy
+# VocaLens Privacy Policy
 
 **Effective Date:** April 8, 2026
-**Last Updated:** April 8, 2026
+**Last Updated:** November 17, 2026
 
-GlossTrans ("we," "our," or "us") operates the GlossTrans Whiteboard Reader application
+VocaLens ("we," "our," or "us") operates the VocaLens application
 ("App") on the MentraOS platform. This Privacy Policy explains how we collect, use,
 and protect your information when you use our App.
 
@@ -34,7 +34,7 @@ Your data is used solely to provide the translation service:
 - **Extracted Text and Translations:** Held in temporary memory only. All data is cleared when the application restarts or the session ends.
 - **Language Preference:** Stored in memory during your active session only. Not persisted to disk.
 
-No user data is written to a database or permanent storage by GlossTrans.
+No user data is written to a database or permanent storage by VocaLens.
 
 ## 4. Third-Party Services
 
@@ -69,24 +69,24 @@ We implement reasonable measures to protect your data:
 
 As a California resident, you have the right to:
 - **Know** what personal information is collected and how it is used
-- **Delete** your personal information (note: GlossTrans does not persist data beyond your session)
-- **Opt-out** of the sale of personal information (GlossTrans does not sell your data)
+- **Delete** your personal information (note: VocaLens does not persist data beyond your session)
+- **Opt-out** of the sale of personal information (VocaLens does not sell your data)
 - **Non-discrimination** for exercising your privacy rights
 
 To exercise any of these rights, contact us at support@glosstrans.com.
 
 ## 8. Children's Privacy
 
-GlossTrans is not intended for use by children under the age of 13. We do not
+VocaLens is not intended for use by children under the age of 13. We do not
 knowingly collect information from children under 13. If you believe a child
 has used our App, please contact us and we will take appropriate action.
 
 ## 9. Photos and Sensitive Content
 
-Photos captured through GlossTrans may inadvertently contain sensitive or
+Photos captured through VocaLens may inadvertently contain sensitive or
 personally identifiable information visible on whiteboards, signs, or
 documents. Users are responsible for ensuring they have appropriate
-permission to capture and process such content. GlossTrans does not store
+permission to capture and process such content. VocaLens does not store
 or review captured images.
 
 ## 10. Changes to This Policy
@@ -99,10 +99,10 @@ the App after changes constitutes acceptance of the revised policy.
 
 If you have questions about this Privacy Policy, contact us at:
 
-**GlossTrans**
+**VocaLens**
 Email: support@glosstrans.com
 
 ## 12. Consent
 
-By using GlossTrans, you consent to the collection and use of your
+By using VocaLens, you consent to the collection and use of your
 information as described in this Privacy Policy.

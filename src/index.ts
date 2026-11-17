@@ -1,5 +1,5 @@
 /**
- * Whiteboard Reader TTS App - Two Server Architecture
+ * VocaLens - Two Server Architecture
  *
  * Port 3334 (Bun)     - Serves React webview + custom API routes
  * Port 3333 (Express) - Handles MentraOS AppServer + proxies to Bun
@@ -21,7 +21,7 @@ import {getSignCameraSettings} from "./app/sign-camera-control"
 // Configuration
 const PORT = parseInt(process.env.PORT || "3333", 10)
 const BUN_PORT = PORT + 1 // 3334
-const PACKAGE_NAME = process.env.PACKAGE_NAME || "com.yourname.whiteboardreader"
+const PACKAGE_NAME = process.env.PACKAGE_NAME || "com.yourname.vocalens"
 const API_KEY = process.env.MENTRAOS_API_KEY || ""
 
 if (!API_KEY) {
@@ -34,7 +34,7 @@ if (!PACKAGE_NAME) {
   process.exit(1)
 }
 
-console.log("🚀 Starting Whiteboard Reader TTS App...\n")
+console.log("🚀 Starting VocaLens...\n")
 
 // ============================================
 // Step 1: Start Bun Server (Port 3334)
@@ -227,7 +227,7 @@ console.log(`   - Session endpoints: http://localhost:${PORT}/session-start`)
 console.log(`   - Webhook: http://localhost:${PORT}/webhook`)
 console.log(`   - Webview (proxied): http://localhost:${PORT}\n`)
 
-console.log("🎉 Whiteboard Reader TTS app is ready!")
+console.log("🎉 VocaLens is ready!")
 console.log(`\n📝 Access the app at: http://localhost:${PORT}\n`)
 
 // ============================================

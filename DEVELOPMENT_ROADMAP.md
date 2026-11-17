@@ -12,7 +12,7 @@ It is split into three sections:
 
 ## Phase 0 — Foundation (Completed)
 
-Everything in this section is already implemented and running in `whiteboard-reader-tts/`. This is the baseline the rest of the roadmap builds on.
+Everything in this section is already implemented and running in VocaLens. This is the baseline the rest of the roadmap builds on.
 
 ### 0.1 — Dual-pipeline app shell
 - [x] **Whiteboard OCR pipeline:** camera photo → `gemini-ocr.ts` → TTS on glasses

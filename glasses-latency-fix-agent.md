@@ -2,7 +2,7 @@
 
 ## Context
 
-**Project:** GolarArt / whiteboard-reader-tts (live ASL translation on Mentra glasses)
+**Project:** VocaLens (live ASL translation on Mentra glasses)
 **Stack:** React webview, Bun, MediaPipe (currently legacy `@mediapipe/hands`), FastAPI classifier service, Cloudflare dev tunnel
 **Symptom:** Skeleton overlay lags behind actual motion on Mentra glasses webview. Works fine on MacBook webcam.
 **Hypothesis:** Compute budget overrun on constrained webview. Running multiple landmarkers exceeds ~33ms per-frame budget at 30fps.

@@ -310,10 +310,10 @@ function TranslationCard({entry, onRemove}: {entry: TranslationEntry; onRemove: 
   )
 }
 
-const PRIVACY_KEY = "glosstrans_privacy_accepted"
-const APP_MODE_KEY = "glosstrans_active_mode"
-const SIGN_TRAINING_MODE_KEY = "glosstrans_sign_training_mode"
-const SIGN_TRAINING_LABEL_KEY = "glosstrans_sign_training_label"
+const PRIVACY_KEY = "vocalens_privacy_accepted"
+const APP_MODE_KEY = "vocalens_active_mode"
+const SIGN_TRAINING_MODE_KEY = "vocalens_sign_training_mode"
+const SIGN_TRAINING_LABEL_KEY = "vocalens_sign_training_label"
 
 function PrivacyGate({onAccept}: {onAccept: () => void}) {
   return (
@@ -339,7 +339,7 @@ function PrivacyGate({onAccept}: {onAccept: () => void}) {
           textTransform: "uppercase",
         }}
       >
-        GLOSSTRANS
+        VOCALENS
       </h1>
       <span style={{fontSize: "0.7rem", color: "#000000", letterSpacing: "0.1em", marginBottom: "1.5rem", fontWeight: 900}}>
         PRIVACY POLICY
@@ -361,7 +361,7 @@ function PrivacyGate({onAccept}: {onAccept: () => void}) {
         }}
       >
         <p style={{color: "#000000", fontWeight: 900, marginTop: 0}}>DATA WE PROCESS</p>
-        <p>When you use GlossTrans, the following data is processed:</p>
+        <p>When you use VocaLens, the following data is processed:</p>
         <ul style={{paddingLeft: "1.2rem", margin: "0.5rem 0"}}>
           <li>Photos captured through your smart glasses</li>
           <li>One frame from the phone camera when you ask a spoken question</li>
@@ -903,7 +903,7 @@ export function App() {
               lineHeight: 1,
             }}
           >
-            GlossTrans
+            VocaLens
           </h1>
           <span style={{fontSize: "0.65rem", color: "#000000", letterSpacing: "0.08em", fontWeight: 900}}>
             TEXT TO SPEECH + ASL TO SPEECH

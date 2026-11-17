@@ -11,7 +11,7 @@ from .schemas import ClassifySequenceRequest, ClassifySequenceResponse
 
 DATA_DIR = Path(os.environ.get("SIGN_CLASSIFIER_DATA_DIR", Path(__file__).resolve().parent.parent / "data" / "sign-samples"))
 classifier = LandmarkSequenceClassifier(DATA_DIR)
-app = FastAPI(title="Whiteboard Reader TTS Sign Classifier", version="0.1.0")
+app = FastAPI(title="VocaLens Sign Classifier", version="0.1.0")
 
 
 @app.get("/health")

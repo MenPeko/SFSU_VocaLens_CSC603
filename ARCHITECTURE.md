@@ -2,227 +2,144 @@
 
 ## Overview
 
-This app now has **two input pipelines** that converge on the same output surfaces:
+VocaLens is one local web app. [`src/index.ts`](./src/index.ts) starts a single Bun server on `PORT` (default `3333`). That process serves the React page, the API, server-sent events, and MediaPipe files. The laptop camera is the only capture source. Speech plays in the browser.
 
-1. **Whiteboard OCR mode**
-   - Uses the Mentra Live glasses camera
-   - Extracts text from a captured photo with Gemini OCR
-   - Optionally translates that text to the selected target language
-   - Speaks the result on the glasses and updates the text wall
+Two modes share that page:
 
-2. **ASL sign translation mode**
-   - Uses the webview/browser camera in the React frontend
-   - Tracks hands with MediaPipe Hands and renders a live skeleton overlay
-   - Records a chronological `4 x 4` sign grid when the user signs
-   - Sends the grid to Gemini for ASL-to-English interpretation
-   - Optionally translates the English result to the selected target language
-   - Speaks the result on the active glasses session and pushes it into the same SSE/UI history
+1. **Written Text**
+   - [`src/webview/components/VocalensCapture.tsx`](./src/webview/components/VocalensCapture.tsx) uses the laptop camera
+   - Press and hold to ask about the current frame
+   - Whisper transcribes the question and Gemini answers it
+   - [`speakText`](./src/webview/lib/speech.ts) reads the answer aloud
+
+2. **Live Sign**
+   - [`useSignLanguage`](./src/webview/hooks/useSignLanguage.ts) opens the laptop camera at the requested quality, today 720p
+   - MediaPipe Holistic tracks pose, face, and both hands and draws the skeleton
+   - A rolling landmark window is sent to `/api/sign-translate` when the hands go down
+   - A local classifier answers when it is confident. Gemini interprets the sign when the classifier is unavailable or unsure
+   - The page speaks the translation with `speakText`
 
 ## Current Architecture
 
 ```mermaid
 flowchart TD
-  User[User] --> Glasses[Mentra Live Glasses]
-  User --> Browser[React Webview]
+  User[User] --> Browser[Browser]
+  Browser --> Bun[Bun server port 3333]
+  Bun --> Webview[App.tsx]
+  Bun --> ApiRoutes[API routes and SSE]
+  Bun --> MediaPipeFiles["/mediapipe/* from public/"]
 
-  Glasses --> Cloud[Mentra Cloud]
-  Cloud --> Express[Express + Mentra AppServer<br/>port 3333]
-  Express --> Bun[Bun Server<br/>port 3334]
+  Webview --> WrittenText[VocalensCapture]
+  Webview --> SignCapture[SignLanguageCapture]
+  SignCapture --> Holistic[useSignLanguage Holistic]
+  Holistic --> LaptopCamera[Laptop camera]
+  Holistic --> ApiRoutes
+  WrittenText --> LaptopCamera
+  WrittenText --> ApiRoutes
 
-  Express --> ActiveSession[Active Session Registry]
-  Express --> Public[public/<br/>MediaPipe WASM assets]
-  Express --> SSE[SSEManager]
-
-  Bun --> Webview[App.tsx + SignLanguageCapture]
-  Bun --> ApiRoutes[/api/settings/language<br/>/api/sign-translate]
-
-  Browser --> Webview
-  Webview --> MediaPipe[useSignLanguage + @mediapipe/hands]
-  MediaPipe --> Fingerpose[fingerpose gesture hints]
-  MediaPipe --> Grid[4x4 temporal grid]
-  Grid --> ApiRoutes
-
-  Glasses --> CaptionsApp[CaptionsApp]
-  CaptionsApp --> OCR[gemini-ocr.ts]
-  OCR --> Gemini[Google Gemini API]
-
-  ApiRoutes --> SignInterpreter[gemini-sign-interpreter.ts]
-  SignInterpreter --> Gemini
-  ApiRoutes --> Translate[gemini-translate.ts]
-  Translate --> Gemini
-
-  CaptionsApp --> Translate
-  CaptionsApp --> SSE
-  ApiRoutes --> SSE
-  SSE --> Browser
-
-  CaptionsApp --> ActiveSession
-  ApiRoutes --> ActiveSession
-  ActiveSession --> Glasses
+  ApiRoutes --> Classifier[Local sign classifier]
+  ApiRoutes --> Gemini[Gemini]
+  ApiRoutes --> Browser
+  Webview --> Speech[speakText]
 ```
 
-## Server Topology
+## Server
 
-The app uses a **dual-server setup**:
+One `Bun.serve` call owns every route:
 
-- **Express / Mentra AppServer** on port `3333`
-  - Owns Mentra session lifecycle
-  - Receives webhook and photo-upload callbacks from Mentra Cloud
-  - Serves SSE directly at `/api/stream`
-  - Serves static files from `public/`
-  - Tracks the active Mentra session so the API can speak on the glasses
-  - Proxies unmatched webview/API requests to Bun
+- Webview fallback from [`src/webview/index.html`](./src/webview/index.html)
+- API routes from [`src/api/routes.ts`](./src/api/routes.ts), including `/api/sign-translate` and `/api/stream`
+- `/mediapipe/*`, which reads the matching file from `public/`
 
-- **Bun server** on port `3334`
-  - Serves the React webview
-  - Hosts Bun route handlers such as `/api/sign-translate`
-  - Provides hot reload during development
+Hot reload is on when `NODE_ENV` is not `production`.
 
-This means:
-
-- Mentra Cloud and glasses traffic enters through **Express**
-- Browser/webview rendering is hosted by **Bun**
-- MediaPipe runtime files are served from **Express `public/`**
-
-## Whiteboard OCR Flow
+## Written Text Flow
 
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant G as Mentra Glasses
-  participant C as Mentra Cloud
-  participant E as Express/AppServer
-  participant A as CaptionsApp
-  participant O as gemini-ocr.ts
-  participant T as gemini-translate.ts
-  participant S as SSEManager
-  participant UI as React Webview
+  participant UI as VocalensCapture
+  participant API as POST /api/vocalens/ask
+  participant Speech as speakText
 
-  U->>G: Short press button
-  G->>C: Button event
-  C->>E: Session/webhook traffic
-  E->>A: Active AppSession
-  A->>G: requestPhoto()
-  G->>C: Upload photo
-  C->>E: POST /photo-upload
-  E->>A: Resolve photo promise
-  A->>O: OCR image buffer
-  O-->>A: Extracted text
-  A->>T: Translate to target language
-  T-->>A: Final text
-  A->>S: Broadcast translation_result
-  S-->>UI: Update webview history
-  A->>G: showTextWall + audio.speak()
+  U->>UI: Press and hold, then ask
+  UI->>UI: Laptop camera frame and microphone
+  UI->>API: Frame and question audio
+  API-->>UI: Streamed answer
+  UI->>Speech: Speak the answer
 ```
 
-## ASL Sign Translation Flow
+## Live Sign Flow
 
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant UI as React Webview
+  participant UI as SignLanguageCapture
   participant H as useSignLanguage
-  participant MP as MediaPipe Hands
-  participant FP as fingerpose
   participant API as POST /api/sign-translate
-  participant SI as gemini-sign-interpreter.ts
-  participant GT as gemini-translate.ts
-  participant S as SSEManager
-  participant AS as Active Session Registry
-  participant G as Mentra Glasses
+  participant Speech as speakText
 
-  U->>UI: Sign in front of browser camera
+  U->>UI: Sign in front of the laptop camera
   UI->>H: Video frames
-  H->>MP: Hand landmark inference
-  MP-->>H: Landmarks
-  H->>FP: Gesture hint estimation
-  H->>UI: Draw live skeleton overlay
-  H->>H: Capture 12fps frames into 4x4 grid
-  H->>API: Send base64 grid when hands down for 1500ms
-  API->>SI: Interpret ASL grid into English
-  SI-->>API: English text
-  API->>GT: Optional translation to target language
-  GT-->>API: Final target-language text
-  API->>S: Broadcast translation_result sourceType=sign
-  API->>AS: speakOnActiveSession()
-  AS->>G: showTextWall + audio.speak()
-  S-->>UI: Update history/debug panel
+  H->>H: Holistic landmarks and skeleton
+  H->>API: Landmark window when the hands go down
+  API-->>UI: Translation
+  UI->>Speech: Speak the translation
+  API-->>UI: SSE translation_result
 ```
+
+The route always returns `spokeOnGlasses: false`. Nothing speaks outside the browser.
 
 ## Frontend Sign Pipeline
 
-The sign-language frontend lives in the React webview and centers around:
-
 - [`src/webview/hooks/useSignLanguage.ts`](./src/webview/hooks/useSignLanguage.ts)
-  - Starts/stops browser camera access
-  - Initializes and cleans up MediaPipe Hands
-  - Draws live landmark joints and hand connections on a visible canvas
-  - Tracks `isSigning`
-  - Debounces “hands down” for `1500ms`
-  - Samples frames at `12fps`
-  - Builds a chronological `4 x 4` hidden grid canvas
-  - Emits a base64 JPEG payload when signing stops
-
+  - Opens `getUserMedia` for the laptop camera
+  - Initializes Holistic and draws the skeleton
+  - Keeps a rolling landmark window and emits a payload when the hands go down
+  - Logs `[MP_TIMING][HOLISTIC]` when timing debug is on
 - [`src/webview/components/SignLanguageCapture.tsx`](./src/webview/components/SignLanguageCapture.tsx)
-  - Layers the webcam video and the skeleton canvas
-  - Shows fingerpose hints
-  - Shows the latest captured sign grid
-  - Shows API roundtrip debug information
-
+  - Shows the laptop camera and the skeleton
+  - Shows the API roundtrip
 - [`src/webview/App.tsx`](./src/webview/App.tsx)
-  - Hosts both OCR translation history and the ASL capture UI
-  - Posts sign-grid payloads to `/api/sign-translate`
-  - Renders SSE-driven translation cards for both OCR and sign results
+  - Posts the payload to `/api/sign-translate`
+  - Speaks the returned text
 
 ### Why `fingerpose` is used
 
-`fingerpose` is **not** the main translator. It is used as a lightweight helper to:
-
-- classify coarse handshapes locally
-- provide debug hints in the UI
-- send noisy auxiliary gesture hints into the Gemini sign prompt
-
-This improves observability and may help Gemini disambiguate some sequences, but the **actual ASL phrase interpretation** still happens in Gemini using the temporal grid.
+`fingerpose` is not the translator. It classifies coarse handshapes locally, shows those hints, and sends them along as non-authoritative context. The local classifier is the primary recognizer. Gemini is the fallback.
 
 ### Why `@sign/translate` is not on the critical path
 
-The installed `@sign/translate` package is a much larger Angular-based project and is **not** used as a direct runtime dependency in this architecture. For this app, it currently serves better as reference material than as an imported execution path.
+The installed `@sign/translate` package is a much larger Angular project and is not imported on the request path. It is reference material.
 
 ## AI Services
 
 ### `gemini-ocr.ts`
 
-Used by the glasses photo pipeline.
+Shared Gemini request helper used by translation, visual questions, transcription fallback, and the sign interpreter. It is not a glasses photo pipeline.
 
-- Sends image bytes as Gemini `inline_data`
-- Uses an OCR-only prompt
+- Sends image bytes as Gemini `inline_data` when a caller needs vision
 - Normalizes Gemini responses
 - Retries transient errors
 - Falls back across models
 
 ### `gemini-translate.ts`
 
-Shared by both pipelines.
-
-- Detects source language
-- Translates into the selected target language
-- Returns structured translation metadata
-- Reuses the same retry and model fallback behavior
+Translates recognized text into the selected target language and reuses the same retry and model fallback behavior.
 
 ### `gemini-sign-interpreter.ts`
 
-Used by the ASL sign-grid route.
+Used when the local classifier does not accept the sequence.
 
-- Accepts a base64 JPEG sign grid
-- Uses a system prompt that explains the grid is a **chronological ASL sequence**
-- Treats fingerpose hints as secondary/non-authoritative hints
+- Accepts the sign grid
+- Treats fingerpose hints as secondary
 - Returns concise English text
 - Uses `GEMINI_SIGN_MODEL` when set, defaulting to `gemini-1.5-flash`
 - Falls back to `gemini-2.5-flash` and `gemini-2.0-flash` if needed
 
-## SSE and Shared Output Surface
+## SSE
 
-Both input modes feed a shared SSE stream:
+The page listens to `/api/stream` for:
 
 - `status`
 - `ocr_result`
@@ -230,69 +147,23 @@ Both input modes feed a shared SSE stream:
 - `error`
 - `heartbeat`
 
-Important detail:
-
-- Sign results reuse the **same `translation_result` event** as OCR
-- Sign results include extra metadata such as:
-  - `sourceType: "sign"`
-  - `sourceLabel: "ASL Grid"`
-  - `sourceModel`
-  - `frameCount`
-  - `spokeOnGlasses`
-
-This keeps the frontend history unified while still letting the UI distinguish OCR cards from sign cards.
-
-## Active Session Speech Bridge
-
-The sign translation route is not inside `CaptionsApp`, so it cannot directly call `session.audio.speak()` unless a session is discoverable.
-
-That is why the app uses:
-
-- [`src/app/active-session.ts`](./src/app/active-session.ts)
-  - stores the most recent live `AppSession`
-  - exposes `speakOnActiveSession()`
-
-- [`src/app/CaptionsApp.ts`](./src/app/CaptionsApp.ts)
-  - registers sessions on connect
-  - unregisters sessions on disconnect
-
-This allows `/api/sign-translate` to speak results on the currently active glasses session.
+Sign results use `translation_result` with `sourceType: "sign"`.
 
 ## Public Assets
 
-MediaPipe runtime assets are expected at:
-
-- `public/mediapipe/hands/*`
-
-The hook resolves files such as:
-
-- `/mediapipe/hands/hands.binarypb`
-- `/mediapipe/hands/hands_solution_wasm_bin.wasm`
-- `/mediapipe/hands/hands_solution_simd_wasm_bin.wasm`
-
-The app serves `public/` through the Express AppServer via:
-
-- `publicDir: "./public"` in [`src/index.ts`](./src/index.ts)
-
-Setup note:
-
-- Copy the contents of `node_modules/@mediapipe/hands/` into `public/mediapipe/hands/`
-- See [`public/README.md`](./public/README.md)
+The live hook loads Holistic from `/mediapipe/holistic/`. [`src/index.ts`](./src/index.ts) serves those files from `public/mediapipe/`. See [`public/README.md`](./public/README.md) for the copy step from `node_modules/@mediapipe/holistic/`.
 
 ## Runtime Requirements
 
 In `.env`:
 
-- `PACKAGE_NAME` must exactly match the Mentra app package in the Mentra console
-- `MENTRAOS_API_KEY` must be the app API key for that package
-- `GEMINI_API_KEY` must be valid and active
-- `GEMINI_MODEL` is used for OCR and text translation
-- `GEMINI_SIGN_MODEL` is optional and is used for ASL sign interpretation
-- `PORT=3333`
+- `GEMINI_API_KEY` must be valid for translation and the sign fallback
+- `OPENAI_API_KEY` is used for spoken questions
+- `GEMINI_MODEL` is used for text translation and visual answers
+- `GEMINI_SIGN_MODEL` is optional
+- `PORT=3333` is optional. That is the default
 
-Optional:
-
-- `NGROK_DOMAIN` for a stable tunnel URL during development
+The process does not read `MENTRAOS_API_KEY` or `PACKAGE_NAME`.
 
 Recommended values:
 
@@ -301,12 +172,12 @@ Recommended values:
 
 ## Model Retry and Fallback Behavior
 
-All Gemini-backed services share the same retry philosophy:
+Gemini-backed services share the same retry philosophy:
 
 - Retry transient errors (`429`, `500`, `503`) up to 3 times
 - Backoff delays: `1s`, then `2s`
 - Move to the next model if the current model is missing or continues failing transiently
-- For OCR and text translation, if the configured and built-in fallback models return `404`, the app queries Gemini's `models.list` endpoint and retries with an accessible `generateContent` model for that API key
+- For vision and text translation, if the configured and built-in fallback models return `404`, the app queries Gemini's `models.list` endpoint and retries with an accessible `generateContent` model for that API key
 
 Typical model order:
 
@@ -325,115 +196,54 @@ For the sign interpreter specifically, that means:
 
 From this repository:
 
-- `bun run dev`
-  - runs the dual-server app locally
-- `bun run dev-start`
-  - runs tests first
-  - starts the app in the background
-  - starts an ngrok tunnel
-  - prints the public tunnel URL
-- `bun run dev-stop`
-  - stops both the app and tunnel
-- `bun run dev-restart`
-  - restarts both
-
-## Mentra Console Settings
-
-- App visibility: typically `private` during development
-- `publicUrl`: current ngrok HTTPS URL
-- `webviewURL`: same ngrok HTTPS URL
-- Required capabilities:
-  - `CAMERA` for whiteboard OCR mode
-  - `SPEAKER` so the app can speak on the glasses
-
-Notes:
-
-- The **sign pipeline uses the webview/browser camera**, not the glasses camera
-- The **OCR pipeline uses the glasses camera**
+- `bun run dev` or `bun src/index.ts` starts the one server
+- Open `http://localhost:3333`
+- `bun run dev-start` runs tests and can start the local classifier in the background. The ngrok URL it prints is not required
 
 ## Key Files
 
-- [`src/index.ts`](./src/index.ts)
-  - boots Bun + Express/AppServer
-  - serves the webview, APIs, SSE, and public assets
-- [`src/app/CaptionsApp.ts`](./src/app/CaptionsApp.ts)
-  - Mentra session logic for glasses-driven OCR
-- [`src/app/active-session.ts`](./src/app/active-session.ts)
-  - active session registry so API routes can speak on the glasses
-- [`src/api/routes.ts`](./src/api/routes.ts)
-  - Bun routes including `/api/sign-translate`
-- [`src/api/sse-stream.ts`](./src/api/sse-stream.ts)
-  - SSE manager and event stream implementation
-- [`src/services/gemini-ocr.ts`](./src/services/gemini-ocr.ts)
-  - OCR service
-- [`src/services/gemini-translate.ts`](./src/services/gemini-translate.ts)
-  - shared text translation service
-- [`src/services/gemini-sign-interpreter.ts`](./src/services/gemini-sign-interpreter.ts)
-  - ASL grid interpretation service
-- [`src/webview/hooks/useSignLanguage.ts`](./src/webview/hooks/useSignLanguage.ts)
-  - MediaPipe + grid-capture hook
-- [`src/webview/components/SignLanguageCapture.tsx`](./src/webview/components/SignLanguageCapture.tsx)
-  - sign capture UI and debug panel
+- [`src/index.ts`](./src/index.ts) — the Bun server
+- [`src/api/routes.ts`](./src/api/routes.ts) — sign translation, training samples, language, and sign debug
+- [`src/api/sse-stream.ts`](./src/api/sse-stream.ts) — SSE manager
+- [`src/webview/hooks/useSignLanguage.ts`](./src/webview/hooks/useSignLanguage.ts) — laptop camera, Holistic, and the landmark window
+- [`src/webview/components/SignLanguageCapture.tsx`](./src/webview/components/SignLanguageCapture.tsx) — sign UI
+- [`src/webview/components/VocalensCapture.tsx`](./src/webview/components/VocalensCapture.tsx) — written text
+- [`src/webview/lib/speech.ts`](./src/webview/lib/speech.ts) — browser speech
 
 ## Troubleshooting
 
-### App shows "inactive"
+### The page does not load
 
-- Ensure the local app is running
-- Ensure ngrok is active
-- Verify `publicUrl` and `webviewURL` match the current tunnel URL
-- Confirm `PACKAGE_NAME` matches the Mentra console package exactly
-- Confirm `MENTRAOS_API_KEY` belongs to that package
+- Run `bun src/index.ts` or `bun run dev`
+- Open `http://localhost:3333`
+- If the port is taken, stop the other process or set `PORT`
 
-### Whiteboard photo request times out
+### The sign skeleton does not render
 
-- This usually means Mentra Cloud is still using a stale `publicUrl`
-- After updating `publicUrl`, **relaunch the app on the glasses**
-- The cloud caches app callback URLs for the lifetime of the session
-
-### Sign skeleton does not render
-
-- Confirm the browser/webview camera permission is granted
-- Confirm MediaPipe assets exist under `public/mediapipe/hands/`
-- Open the network tab and verify requests to `/mediapipe/hands/...` return `200`
-- If those files 404, the hook can initialize incorrectly or fail silently
+- Allow the laptop camera
+- Confirm `/mediapipe/holistic/` requests return `200`
+- If those files 404, copy `node_modules/@mediapipe/holistic/` into `public/mediapipe/holistic/` as described in [`public/README.md`](./public/README.md)
 
 ### Sign capture works, but `/api/sign-translate` fails
 
-- Check that `GEMINI_API_KEY` is set
+- Check that `GEMINI_API_KEY` is set when the local classifier cannot answer
 - If you set `GEMINI_SIGN_MODEL`, verify that model is available to your API key
-- Watch the API debug card in the sign capture panel for latency and server errors
+- Watch the API debug card in the sign panel
 
-### Sign result does not speak on the glasses
+### A translation is not spoken
 
-- Make sure a Mentra session is active
-- The active session registry only speaks when at least one session is connected
-- If the webview is open but no glasses session exists, the API can still interpret signs, but `speakOnGlasses` will be false
+- The browser has to allow speech synthesis
+- The page speaks after `/api/sign-translate` returns text. A training-sample save does not speak
+- `spokeOnGlasses` in the JSON body is always `false`
 
 ### SSE history updates, but status never clears
 
-- The frontend expects `status: "ready"` after interpretation/translation
-- If the route throws before the ready status broadcast, the UI may remain in an in-between state until the next event
-
-### Session connects then disconnects immediately
-
-- Check logs from `CaptionsApp` with `logLevel: "debug"`
-- Common causes:
-  - wrong `MENTRAOS_API_KEY`
-  - mismatched `PACKAGE_NAME`
-  - cloud-side rejection of the session websocket
+- The page expects `status: "ready"` after interpretation
+- If the route throws before that broadcast, the status stays in between until the next event
 
 ## Security Notes
 
 - Keep real keys in `.env` only
 - Do not commit secrets
-- Treat sign grids and OCR photos as sensitive user input
+- Treat sign grids and camera frames as sensitive user input
 - Use separate development and production Gemini keys when possible
-
-## Future Improvements
-
-- Persist sign translation sessions per user rather than using the latest active session
-- Add phrase chunking or confidence hints for long sign sequences
-- Add a dedicated SSE event type for sign interpretation before text translation
-- Add optional server-side storage for recent debug grids in development only
-- Add tests for `/api/sign-translate` route behavior end-to-end

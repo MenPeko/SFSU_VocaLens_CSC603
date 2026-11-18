@@ -1,22 +1,21 @@
 # VocaLens
 
-VocaLens is a Mentra mini app for Mentra Live glasses, with a React webview on the phone. It has two modes:
+VocaLens is one local web app. A single Bun server serves the page and the API. The laptop camera is the only sign-capture source, and speech plays in the browser. It has two modes:
 
 - **Written Text** (`whiteboard`)
-  - Short-press a glasses button. The app takes a photo, reads the text with Gemini, optionally translates it, and speaks it through the glasses.
-  - Spoken questions run on the same page: press and hold to ask about what the camera sees. The question is transcribed with Whisper, answered with Gemini, and read back.
+  - Press and hold to ask about what the laptop camera sees. The question is transcribed with Whisper, answered with Gemini, and spoken in the browser.
 - **Live Sign** (`sign`)
-  - The webview runs MediaPipe Holistic on the camera feed and recognizes eight ASL signs: wait, help, yes, no, stop, again, thank you, and please.
+  - The page runs MediaPipe Holistic on the laptop camera and recognizes eight ASL signs: wait, help, yes, no, stop, again, thank you, and please.
   - Recognition uses a local classifier service (`sign_classifier_service/`). When that service is unavailable or unsure, Gemini interprets the sign instead.
+  - The translation is spoken in the browser.
 
 ## Requirements
 
-- Mentra Live glasses connected to the MentraOS phone app
-- A MiniApp registered in the Mentra console with `CAMERA` and `SPEAKER` permissions
 - Bun
 - A Gemini API key, and an OpenAI API key for spoken questions
-- `ngrok` for `dev-start` (`brew install ngrok`)
 - Optional, for the local sign classifier: Python 3.9+ with a virtualenv at `.venv/`
+
+No Mentra account, tunnel, or glasses session is required.
 
 ## Setup
 
@@ -28,8 +27,6 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-PACKAGE_NAME=com.yourname.vocalens
-MENTRAOS_API_KEY=your_api_key_from_console
 PORT=3333
 NODE_ENV=development
 GEMINI_API_KEY=your_gemini_api_key
@@ -38,13 +35,12 @@ OPENAI_API_KEY=your_openai_api_key
 VOCALENS_COMPARE_MODEL=gpt-4o
 ```
 
-If `GEMINI_MODEL` is not available to your key, the app discovers another accessible `generateContent` model.
+`PORT` defaults to `3333` when it is unset. If `GEMINI_MODEL` is not available to your key, the app discovers another accessible `generateContent` model. `.env.example` may still list `MENTRAOS_API_KEY` and `PACKAGE_NAME`. The app does not read them.
 
 Optional settings:
 
 | Variable | Purpose |
 | --- | --- |
-| `NGROK_DOMAIN` | A stable ngrok domain, so the tunnel URL survives restarts. |
 | `GEMINI_SIGN_MODEL` | A different Gemini model for the sign fallback. |
 | `SIGN_CLASSIFIER_URL` | Classifier endpoint. Default: `http://127.0.0.1:8001/classify-sign-sequence`. |
 | `SIGN_CLASSIFIER_DISABLED` | Skip the local classifier and use Gemini only. |
@@ -63,33 +59,28 @@ python3 -m venv .venv
 bun run dev
 ```
 
-To run everything in the background:
+Or, without hot reload:
 
 ```bash
-bun run dev-start
-bun run dev-stop
-bun run dev-restart
+bun src/index.ts
 ```
 
-`dev-start` runs `bun test` first and refuses to start if the tests fail. It then starts:
+Open [http://localhost:3333](http://localhost:3333). That one process serves the page, the API, server-sent translation events, and the MediaPipe files.
 
-- the sign classifier on port `8001`, if FastAPI and uvicorn are installed in `.venv` (otherwise Live Sign uses Gemini only)
-- the app server on port `3333`
-- an ngrok tunnel to that port
-
-It prints the tunnel URL. Use it as the Mentra app `publicUrl` and `webviewURL`. Without `NGROK_DOMAIN` the URL changes on every restart, so you would have to update the console and relaunch the app on the glasses.
+`bun run dev-start` runs the tests, then starts the sign classifier in the background when `.venv` has FastAPI and uvicorn. It also prints an ngrok URL. You do not need that URL to use the app.
 
 ## Usage
 
 Written Text:
 
-- Launch the app from the MentraOS phone app.
-- Look at the whiteboard and short-press a glasses button.
-- The app speaks the extracted text. If it finds none, it says: "I could not read text from the whiteboard. Please try again."
+- Open the app and stay on Written Text.
+- Press and hold, then ask about what the laptop camera sees.
+- The answer is spoken in the browser.
 
 Live Sign:
 
-- Switch to Live Sign in the webview and sign in front of the camera.
+- Switch to Live Sign and allow the laptop camera.
+- Sign with your hands in view. The page draws the skeleton and speaks the translation.
 - The skeleton overlay is smoothed with a One Euro filter (`src/sign/one-euro.ts`) to reduce jitter. Only the drawing is smoothed. The landmarks sent to the classifier are unchanged.
 
 Developer switches in the webview's `localStorage`:

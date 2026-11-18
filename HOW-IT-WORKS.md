@@ -2,6 +2,8 @@
 
 This document explains how VocaLens uses Bun 1.3's built-in features to serve a React application with **zero build step**.
 
+The running app is one Bun process, started from `src/index.ts` on `PORT` (default `3333`). That process serves the page, the API, and `/mediapipe/*`. Live Sign reads the laptop camera in the page. Speech uses the browser's `speechSynthesis` through `speakText`.
+
 ## Overview
 
 Traditional React apps require:
@@ -29,25 +31,32 @@ env = "BUN_PUBLIC_*"
 
 **Without this file:** Tailwind won't work! CSS files will be served raw without processing.
 
-### 2. `src/server.ts` - Server Setup
+### 2. `src/index.ts` - Server Setup
 
 ```typescript
-import { serve } from "bun";
-import index from "./webview/index.html";
+import {serve} from "bun"
+import {routes} from "./api/routes"
+import index from "./webview/index.html"
 
-export function startWebServer(config) {
-  return serve({
-    port: config.port,
-    routes: {
-      "/*": index,  // The magic happens here!
+const PORT = parseInt(process.env.PORT || "3333", 10)
+
+const server = serve({
+  port: PORT,
+  routes: {
+    ...routes,
+    "/mediapipe/*": {
+      GET: serveMediapipeAsset,
     },
-    development: {
-      hmr: true,     // Hot module reloading
-      console: true,
-    },
-  });
-}
+    "/*": index,
+  },
+  development: process.env.NODE_ENV !== "production" && {
+    hmr: true,
+    console: true,
+  },
+})
 ```
+
+There is no second server. `routes` already includes `/api/stream`, so translation events reach the page from this same process. `serveMediapipeAsset`, defined in that file, returns the matching file from `public/`. The laptop camera and browser speech live in the webview, not in this file.
 
 **What `import index from "./webview/index.html"` does:**
 - Bun reads the HTML file
@@ -271,14 +280,12 @@ development: process.env.NODE_ENV !== "production" && {
 ## Why This Structure Works
 
 ```
-captions/
-├── bunfig.toml        # Configures Tailwind plugin
-├── src/
-│   ├── server.ts      # Imports HTML from same tree
-│   └── webview/
-│       ├── index.html # References ./frontend.tsx (same dir)
-│       ├── frontend.tsx
-│       └── App.tsx
+src/
+├── index.ts           # One Bun server. Imports the webview HTML.
+└── webview/
+    ├── index.html     # References ./frontend.tsx (same dir)
+    ├── frontend.tsx
+    └── App.tsx        # Laptop camera and browser speech
 ```
 
 **Key principles:**

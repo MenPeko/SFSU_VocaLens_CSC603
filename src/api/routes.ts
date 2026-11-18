@@ -1,8 +1,6 @@
 import {streamRoute} from "./sse-stream"
 import {translateText} from "../services/gemini-translate"
 import {sseManager} from "./sse-stream"
-import {speakOnActiveSession} from "../app/active-session"
-import {getGlassesCameraStreamState} from "../app/glasses-camera-stream"
 import type {SignGestureHint} from "../services/gemini-sign-interpreter"
 import {resolveSignInterpretation} from "../services/sign-translation-resolver"
 import {
@@ -12,7 +10,6 @@ import {
 } from "../services/sign-training-store"
 import {isCoreSignLabel} from "../sign/core-signs"
 import type {SignLandmarkFrame, SignCaptureSource} from "../sign/types"
-import {getSignCameraSettings, setSignCameraEnabled} from "../app/sign-camera-control"
 import {normalizeSignCaptureSettings} from "../sign/capture-settings"
 import {vocalensRoutes} from "./vocalens-routes"
 
@@ -53,7 +50,6 @@ interface SignTranslateRequestBody {
   gridColumns?: number
   gridRows?: number
   gestureHints?: SignGestureHint[]
-  speakOnGlasses?: boolean
   extractorVersion?: string
 }
 
@@ -105,16 +101,6 @@ export const routes = {
     },
   },
 
-  "/api/settings/sign-camera": {
-    async GET() {
-      return Response.json(getSignCameraSettings())
-    },
-    async POST(req: Request) {
-      const body = (await req.json().catch(() => ({}))) as {enabled?: boolean}
-      return Response.json(setSignCameraEnabled(body.enabled === true))
-    },
-  },
-
   "/api/settings/sign-capture": {
     async GET() {
       return Response.json(getSignCaptureSettings())
@@ -130,12 +116,6 @@ export const routes = {
   "/api/captions/status": {
     async GET() {
       return Response.json({active: true, captionsEnabled: true})
-    },
-  },
-
-  "/api/camera/stream": {
-    async GET() {
-      return Response.json(getGlassesCameraStreamState())
     },
   },
 
@@ -158,7 +138,6 @@ export const routes = {
       if (extractorVersionOrError instanceof Response) return extractorVersionOrError
       const extractorVersion = extractorVersionOrError
 
-      const speakOnGlassesEnabled = body.speakOnGlasses !== false
       const targetLang = getTargetLanguage()
 
       try {
@@ -189,17 +168,12 @@ export const routes = {
           const noSignMessage = "I could not interpret the sign sequence. Please try again."
           sseManager.broadcast({type: "status", status: "ready", message: noSignMessage})
 
-          let spokeOnGlasses = false
-          if (speakOnGlassesEnabled) {
-            spokeOnGlasses = await speakOnActiveSession(noSignMessage, noSignMessage)
-          }
-
           return Response.json({
             success: true,
             englishText: "",
             translatedText: "",
             targetLanguage: targetLang,
-            spokeOnGlasses,
+            spokeOnGlasses: false,
             message: noSignMessage,
             model: interpretation.model,
             recognizerType: interpretation.recognizerType,
@@ -226,12 +200,6 @@ export const routes = {
             : await translateText(englishText, targetLang)
 
         const translatedText = (translation.translatedText || englishText).trim()
-        const spokenText = translatedText.length > 400 ? `${translatedText.slice(0, 400)}.` : translatedText
-
-        let spokeOnGlasses = false
-        if (speakOnGlassesEnabled) {
-          spokeOnGlasses = await speakOnActiveSession(spokenText, `Sign: ${spokenText}`)
-        }
 
         sseManager.broadcast({
           type: "translation_result",
@@ -245,7 +213,7 @@ export const routes = {
           sourceModel: interpretation.model,
           frameCount: body.frameCount || 0,
           sequenceFrameCount: body.sequenceFrameCount || body.landmarkSequence?.length || 0,
-          spokeOnGlasses,
+          spokeOnGlasses: false,
           recognizerType: interpretation.recognizerType,
           recognizedLabel: interpretation.recognizedLabel,
           confidence: interpretation.confidence,
@@ -265,7 +233,7 @@ export const routes = {
           englishText,
           translatedText,
           targetLanguage: targetLang,
-          spokeOnGlasses,
+          spokeOnGlasses: false,
           model: interpretation.model,
           recognizerType: interpretation.recognizerType,
           recognizedLabel: interpretation.recognizedLabel,

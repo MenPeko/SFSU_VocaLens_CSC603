@@ -16,8 +16,7 @@
     "noEmit": true,
     "types": ["bun"],
     "paths": {
-      "@/*": ["./src/webview/*"],
-      "@mentra/sdk": ["./node_modules/@mentra/sdk"]
+      "@/*": ["./src/webview/*"]
     }
   },
   "include": ["src/**/*"],

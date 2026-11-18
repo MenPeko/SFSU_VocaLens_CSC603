@@ -7,6 +7,7 @@ import {
   createHolisticTimingWindow,
   estimateGestureHints,
   experimentExtractorVersion,
+  isTrackingConfidenceExperiment,
   parseTrackingConfidenceExperiment,
   recordHolisticTiming,
   getSkeletonRenderStyle,
@@ -74,6 +75,11 @@ describe("tracking confidence experiment", () => {
     expect(parseTrackingConfidenceExperiment("0")).toBeNull()
     expect(parseTrackingConfidenceExperiment("1")).toBeNull()
     expect(parseTrackingConfidenceExperiment("0.35")).toBe(0.35)
+    expect(isTrackingConfidenceExperiment(undefined)).toBe(false)
+    expect(isTrackingConfidenceExperiment(null)).toBe(false)
+    expect(isTrackingConfidenceExperiment(Number.NaN)).toBe(false)
+    expect(isTrackingConfidenceExperiment(0)).toBe(false)
+    expect(isTrackingConfidenceExperiment(0.35)).toBe(true)
   })
 
   it("stamps a distinct extractor version only while the experiment is on", () => {
@@ -107,23 +113,20 @@ describe("estimateGestureHints", () => {
 })
 
 describe("buildVideoSourceKey", () => {
-  it("includes requested and actual quality so quality changes restart the pipeline", () => {
+  it("includes the requested quality so a quality change restarts the laptop camera", () => {
     expect(
       buildVideoSourceKey({
         type: "device-camera",
         requestedQuality: "1080p",
       }),
-    ).toContain("1080p")
+    ).toBe("device-camera:1080p")
 
     expect(
       buildVideoSourceKey({
-        type: "glasses-stream",
-        requestedQuality: "1080p",
-        actualQuality: "720p",
-        qualityFallback: true,
-        sources: [{url: "https://example.com/live.m3u8", transport: "hls"}],
+        type: "device-camera",
+        requestedQuality: "720p",
       }),
-    ).toContain("720p")
+    ).toBe("device-camera:720p")
   })
 })
 

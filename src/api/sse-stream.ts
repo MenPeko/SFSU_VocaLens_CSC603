@@ -7,7 +7,6 @@ export type StreamEventType =
   | "status"
   | "ocr_result"
   | "translation_result"
-  | "camera_stream"
   | "error"
   | "heartbeat"
 

@@ -7,14 +7,14 @@ import {
   windowLabel,
 } from "../../sign/capture-config"
 import {CORE_SIGN_SAMPLE_TARGET} from "../../sign/core-signs"
+import {isTrackingConfidenceExperiment} from "../../sign/tracking-confidence-experiment"
 import * as confidenceDisplay from "./confidence-display"
 import {
   useSignLanguage,
-  type RemoteSignPlaybackSource,
   type SignSequencePayload,
   type SignVideoSource,
 } from "../hooks/useSignLanguage"
-import type {CameraStreamState, TranslationEntry} from "../hooks/useTranslationStream"
+import type {TranslationEntry} from "../hooks/useTranslationStream"
 import type {SignClassifierAlternative, SignClassifierResult} from "../../sign/types"
 import type {
   ActualCaptureQuality,
@@ -99,7 +99,6 @@ export interface SignTranslationDebugResult {
   englishText?: string
   translatedText?: string
   targetLanguage?: string
-  spokeOnGlasses?: boolean
   model?: string
   message?: string
   rawGeminiOutput?: string
@@ -193,14 +192,23 @@ function getRecognitionPathBanner(result: SignTranslationDebugResult): Recogniti
   }
 }
 
-function isWaitingOnGlassesStream(status: CameraStreamState["status"] | undefined): boolean {
-  return status === "starting" || status === "initializing" || status === "preparing"
+function getCameraStatusLabel(
+  cameraState: "idle" | "requesting" | "ready" | "error",
+  isSigning: boolean,
+  detectedHands: number,
+): string {
+  if (cameraState === "requesting") return "Starting camera"
+  if (cameraState === "error") return "Camera error"
+  if (cameraState === "idle") return "Camera idle"
+  if (isSigning) return `Signing detected (${detectedHands})`
+  return "Watching for hands"
 }
+
+const LAPTOP_CAMERA_SOURCE: SignVideoSource = {type: "device-camera", requestedQuality: "720p"}
 
 interface SignLanguageCaptureProps {
   className?: string
   enabled?: boolean
-  cameraStream?: CameraStreamState | null
   latestSignTranslation?: TranslationEntry | null
   showHandednessOverlay?: boolean
   captureSettings?: SignCaptureSettings
@@ -209,89 +217,6 @@ interface SignLanguageCaptureProps {
   debugToggleBusy?: boolean
   onToggleHandednessOverlay?: (nextValue: boolean) => void | Promise<void>
   onSequenceReady?: (payload: SignSequencePayload) => SignTranslationDebugResult | void | Promise<SignTranslationDebugResult | void>
-}
-
-function extractCloudflarePlaybackId(value: string | undefined): string | null {
-  if (!value) {
-    return null
-  }
-
-  try {
-    const url = new URL(value)
-    const firstPathSegment = url.pathname.split("/").filter(Boolean)[0]
-    return firstPathSegment || null
-  } catch {
-    return null
-  }
-}
-
-function buildGlassesPlaybackSources(cameraStream: CameraStreamState | null | undefined): RemoteSignPlaybackSource[] {
-  const sources: RemoteSignPlaybackSource[] = []
-  const playbackId =
-    extractCloudflarePlaybackId(cameraStream?.previewUrl) ||
-    extractCloudflarePlaybackId(cameraStream?.thumbnailUrl) ||
-    extractCloudflarePlaybackId(cameraStream?.hlsUrl)
-
-  if (cameraStream?.webrtcUrl) {
-    sources.push({
-      url: cameraStream.webrtcUrl,
-      transport: "webrtc",
-    })
-  }
-
-  if (cameraStream?.playbackUrl) {
-    sources.push({
-      url: cameraStream.playbackUrl,
-      transport: cameraStream.playbackMimeType === "application/vnd.apple.mpegurl" ? "hls" : "direct",
-      mimeType: cameraStream.playbackMimeType,
-    })
-  }
-
-  if (cameraStream?.hlsUrl) {
-    sources.push({
-      url: cameraStream.hlsUrl,
-      transport: "hls",
-      mimeType: "application/vnd.apple.mpegurl",
-    })
-  }
-
-  if (playbackId) {
-    sources.push({
-      url: `https://videodelivery.net/${playbackId}/manifest/video.m3u8`,
-      transport: "hls",
-      mimeType: "application/vnd.apple.mpegurl",
-    })
-  }
-
-  return sources.filter(
-    (source, index, values) =>
-      values.findIndex((candidate) => candidate.url === source.url && candidate.transport === source.transport) === index,
-  )
-}
-
-function getCameraStatusLabel(
-  cameraState: "idle" | "requesting" | "ready" | "error",
-  isSigning: boolean,
-  detectedHands: number,
-  sourceType: SignVideoSource["type"],
-): string {
-  if (cameraState === "requesting") return sourceType === "glasses-stream" ? "Connecting glasses" : "Starting camera"
-  if (cameraState === "error") return sourceType === "glasses-stream" ? "Glasses stream error" : "Camera error"
-  if (cameraState === "idle") return "Camera idle"
-  if (isSigning) return `Signing detected (${detectedHands})`
-  return sourceType === "glasses-stream" ? "Watching glasses feed" : "Watching for hands"
-}
-
-async function updateSignCameraCapture(enabled: boolean): Promise<void> {
-  const response = await fetch("/api/settings/sign-camera", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({enabled}),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Failed to ${enabled ? "resume" : "pause"} the live sign camera.`)
-  }
 }
 
 const neo = {
@@ -340,7 +265,6 @@ const neo = {
 export function SignLanguageCapture({
   className = "",
   enabled = true,
-  cameraStream,
   latestSignTranslation = null,
   showHandednessOverlay = false,
   captureSettings,
@@ -358,7 +282,6 @@ export function SignLanguageCapture({
   const [requestState, setRequestState] = useState<"idle" | "sending" | "success" | "error">("idle")
   const [lastApiResult, setLastApiResult] = useState<SignTranslationDebugResult | null>(null)
   const [processingCapture, setProcessingCapture] = useState(false)
-  const [feedReconnectBusy, setFeedReconnectBusy] = useState(false)
 
   useEffect(() => {
     mountedRef.current = true
@@ -368,34 +291,7 @@ export function SignLanguageCapture({
     }
   }, [])
 
-  const glassesPlaybackSources = buildGlassesPlaybackSources(cameraStream)
-  const isGlassesStreamActive = cameraStream?.status === "active" && glassesPlaybackSources.length > 0
-  const hasManagedGlassesSession = Boolean(cameraStream?.sessionId && cameraStream?.userId)
-  const allowDeviceCameraFallback =
-    !cameraStream ||
-    ((!cameraStream.sessionId || !cameraStream.userId) &&
-      (cameraStream.status === "idle" || cameraStream.status === "stopped"))
-  const signVideoSource: SignVideoSource = isGlassesStreamActive
-    ? {
-        type: "glasses-stream",
-        sources: glassesPlaybackSources,
-        requestedQuality: cameraStream?.requestedQuality,
-        actualQuality: cameraStream?.actualQuality,
-        qualityFallback: cameraStream?.qualityFallback,
-      }
-    : {type: "device-camera", requestedQuality: "720p"}
-  const captureEnabled =
-    enabled &&
-    captureSettingsStatus !== "loading" &&
-    !processingCapture &&
-    (isGlassesStreamActive || allowDeviceCameraFallback)
-  const usingDeviceCamera = signVideoSource.type === "device-camera"
-  const shouldDisplayGlassesSource = isGlassesStreamActive || (!allowDeviceCameraFallback && Boolean(cameraStream))
-  const shouldRequestManagedFeedRestart =
-    hasManagedGlassesSession &&
-    shouldDisplayGlassesSource &&
-    !isGlassesStreamActive &&
-    !isWaitingOnGlassesStream(cameraStream?.status)
+  const captureEnabled = enabled && captureSettingsStatus !== "loading"
 
   const handleSequenceReady = async (payload: SignSequencePayload) => {
     if (!onSequenceReady || processingCapture) {
@@ -404,11 +300,6 @@ export function SignLanguageCapture({
 
     setProcessingCapture(true)
     setRequestState("sending")
-    const pauseLiveFeedPromise = hasManagedGlassesSession
-      ? updateSignCameraCapture(false).catch((cameraError) => {
-          console.error("Failed to pause live sign camera", cameraError)
-        })
-      : Promise.resolve()
 
     try {
       const result = await onSequenceReady(payload)
@@ -432,16 +323,6 @@ export function SignLanguageCapture({
       })
       setRequestState("error")
     } finally {
-      await pauseLiveFeedPromise
-
-      if (hasManagedGlassesSession && mountedRef.current && enabled) {
-        try {
-          await updateSignCameraCapture(true)
-        } catch (cameraError) {
-          console.error("Failed to resume live sign camera", cameraError)
-        }
-      }
-
       if (mountedRef.current) {
         setProcessingCapture(false)
       }
@@ -451,7 +332,6 @@ export function SignLanguageCapture({
   const {
     cameraState,
     error,
-    videoSource,
     isSigning,
     detectedHands,
     handednessLabels,
@@ -474,7 +354,7 @@ export function SignLanguageCapture({
     canvasRef: overlayCanvasRef,
     gridCanvasRef,
     skeletonGridCanvasRef,
-    videoSource: signVideoSource,
+    videoSource: LAPTOP_CAMERA_SOURCE,
     showHandednessOverlay,
     captureSettings,
     captureSettingsStatus,
@@ -482,67 +362,23 @@ export function SignLanguageCapture({
     onHandsDown: handleSequenceReady,
   })
 
-  const handleFeedControlClick = async () => {
-    if (!shouldRequestManagedFeedRestart) {
-      await restart()
-      return
-    }
-
-    setFeedReconnectBusy(true)
-    try {
-      await updateSignCameraCapture(false)
-      await updateSignCameraCapture(true)
-    } catch (cameraError) {
-      console.error("Failed to reconnect live sign camera", cameraError)
-    } finally {
-      if (mountedRef.current) {
-        setFeedReconnectBusy(false)
-      }
-    }
-  }
-
   const statusLabel =
     processingCapture
       ? "Processing sign"
       : captureSettingsStatus === "loading"
         ? "Loading capture settings"
-      : !captureEnabled && isWaitingOnGlassesStream(cameraStream?.status)
-      ? "Waiting for glasses stream"
-      : !captureEnabled && cameraStream?.status === "error"
-        ? "Glasses stream error"
-        : getCameraStatusLabel(
-            cameraState,
-            isSigning,
-            detectedHands,
-            shouldDisplayGlassesSource ? "glasses-stream" : videoSource,
-          )
-  const sourceLabel = shouldDisplayGlassesSource ? "Mentra Glasses" : "Device Camera"
-  const streamStatusLabel = processingCapture
-    ? "PAUSED"
-    : cameraStream?.status
-      ? cameraStream.status.toUpperCase()
-      : usingDeviceCamera
-        ? "LOCAL"
-        : "UNKNOWN"
+        : getCameraStatusLabel(cameraState, isSigning, detectedHands)
+  const sourceLabel = "Laptop camera"
   const previewUnavailableMessage =
-    processingCapture
-      ? "Live sign capture is paused while the last response is being generated. Scanning resumes automatically when the result is ready."
-      : captureSettingsStatus === "loading"
+    captureSettingsStatus === "loading"
       ? "Loading sign-capture runtime settings before initializing MediaPipe."
-      : !captureEnabled && isWaitingOnGlassesStream(cameraStream?.status)
-      ? cameraStream?.message || "Waiting for the Mentra glasses camera stream to come online."
-      : !captureEnabled && cameraStream?.status === "error"
-        ? cameraStream?.message || "The Mentra glasses camera stream could not be started."
-        : usingDeviceCamera
-          ? "Allow webcam access so the hook can track landmarks and render the sign skeleton live."
-          : "Connecting to the Mentra glasses camera stream."
-  const streamMessage = processingCapture
-    ? "Live sign capture is paused while the current response is being generated to reduce glasses heat."
-    : captureSettingsStatus === "fallback"
+      : "Allow the laptop camera so the page can track landmarks and draw the sign skeleton."
+  const streamMessage =
+    captureSettingsStatus === "fallback"
       ? captureSettingsFallbackReason === "timeout"
         ? "Capture settings timed out after 3 seconds, so the client started with fallback defaults."
         : "Capture settings could not be loaded, so the client started with fallback defaults."
-    : cameraStream?.message
+      : null
   const matchingSseTranslation =
     lastApiResult?.operation === "translate" &&
     !lastApiResult.error &&
@@ -556,7 +392,6 @@ export function SignLanguageCapture({
         englishText: matchingSseTranslation?.originalText ?? lastApiResult.englishText,
         translatedText: matchingSseTranslation?.translatedText ?? lastApiResult.translatedText,
         targetLanguage: matchingSseTranslation?.targetLanguage ?? lastApiResult.targetLanguage,
-        spokeOnGlasses: matchingSseTranslation?.spokeOnGlasses ?? lastApiResult.spokeOnGlasses,
         model: matchingSseTranslation?.sourceModel ?? lastApiResult.model,
         recognizerType: matchingSseTranslation?.recognizerType ?? lastApiResult.recognizerType,
         recognizedLabel: matchingSseTranslation?.recognizedLabel ?? lastApiResult.recognizedLabel,
@@ -592,7 +427,7 @@ export function SignLanguageCapture({
             ASL Vision Preview
           </p>
           <p style={{...neo.dimText, marginTop: "0.25rem"}}>
-            MediaPipe holistic landmarks + live skeleton overlay + temporal capture from the Mentra glasses feed.
+            MediaPipe holistic landmarks, a live skeleton overlay, and temporal capture from the laptop camera.
           </p>
         </div>
         <div style={{display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.5rem"}}>
@@ -619,7 +454,7 @@ export function SignLanguageCapture({
               {debugToggleBusy ? "Saving..." : showHandednessOverlay ? "Debug Overlay On" : "Debug Overlay Off"}
             </button>
           )}
-          <span style={neo.badge(shouldDisplayGlassesSource)}>
+          <span style={neo.badge(true)}>
             {sourceLabel}
           </span>
           <span style={neo.badge(isSigning || processingCapture)}>
@@ -634,29 +469,23 @@ export function SignLanguageCapture({
           autoPlay
           muted
           playsInline
-          style={{position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: usingDeviceCamera ? "scaleX(-1)" : undefined}}
+          style={{position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)"}}
         />
         <canvas
           ref={overlayCanvasRef}
-          style={{pointerEvents: "none", position: "absolute", inset: 0, width: "100%", height: "100%", transform: usingDeviceCamera ? "scaleX(-1)" : undefined}}
+          style={{pointerEvents: "none", position: "absolute", inset: 0, width: "100%", height: "100%", transform: "scaleX(-1)"}}
         />
 
         <div style={{pointerEvents: "none", position: "absolute", inset: "0 0 auto 0", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#000000", padding: "0.5rem 0.75rem", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: "#ffffff", fontWeight: 900, borderBottom: "3px solid #FF6600"}}>
-          <span>{shouldDisplayGlassesSource ? "Glasses live feed" : "Device preview"}</span>
+          <span>Laptop camera</span>
           <span>{capturedFrames}/{MAX_GRID_FRAMES} grid frames</span>
         </div>
 
         {cameraState !== "ready" && (
           <div style={{position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#000000", padding: "1rem", textAlign: "center"}}>
             <p style={{fontSize: "0.85rem", fontWeight: 900, color: "#FF6600"}}>
-              {processingCapture
-                ? "Processing captured sign..."
-                : cameraState === "requesting"
-                ? shouldDisplayGlassesSource
-                  ? "Connecting to Mentra glasses..."
-                  : "Requesting camera access..."
-                : !captureEnabled && isWaitingOnGlassesStream(cameraStream?.status)
-                  ? "Waiting for Mentra glasses..."
+              {cameraState === "requesting"
+                ? "Requesting camera access..."
                 : "Camera preview unavailable"}
             </p>
             <p style={{marginTop: "0.5rem", fontSize: "0.75rem", color: "#ffffff", fontWeight: 700}}>
@@ -672,8 +501,8 @@ export function SignLanguageCapture({
           <div style={{marginTop: "0.25rem", fontSize: "0.85rem", fontWeight: 900, color: "#000000"}}>{sourceLabel}</div>
         </div>
         <div style={neo.statBox}>
-          <div style={{fontSize: "0.66rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#444444", fontWeight: 900}}>Stream</div>
-          <div style={{marginTop: "0.25rem", fontSize: "0.85rem", fontWeight: 900, color: "#000000"}}>{streamStatusLabel}</div>
+          <div style={{fontSize: "0.66rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#444444", fontWeight: 900}}>Camera</div>
+          <div style={{marginTop: "0.25rem", fontSize: "0.85rem", fontWeight: 900, color: "#000000"}}>{statusLabel}</div>
         </div>
         <div style={neo.statBox}>
           <div style={{fontSize: "0.66rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#444444", fontWeight: 900}}>Hands</div>
@@ -723,11 +552,11 @@ export function SignLanguageCapture({
         </div>
       </div>
 
-      {trackingConfidenceExperiment !== null && (
+      {isTrackingConfidenceExperiment(trackingConfidenceExperiment) && (
         <div style={{...neo.infoBox, marginTop: "0.75rem", borderLeftColor: "#F59E0B", borderLeftWidth: "8px", background: "#FFFBEB"}}>
           <p style={neo.label}>Tracking Experiment On</p>
           <p style={{...neo.dimText, marginTop: "0.25rem"}}>
-            minTrackingConfidence is {trackingConfidenceExperiment}. The local classifier will reject these sequences and Gemini
+            minTrackingConfidence is {trackingConfidenceExperiment.toFixed(2)}. The local classifier will reject these sequences and Gemini
             will handle them; don't record training samples. Turn off with{" "}
             <code>localStorage.removeItem("sign:experiment-tracking-confidence")</code> and restart the camera.
           </p>
@@ -839,7 +668,7 @@ export function SignLanguageCapture({
 
           {requestState === "sending" && (
             <p style={{...neo.dimText, marginTop: "0.5rem"}}>
-              Uploading the temporal sign sequence, pausing the live feed, and waiting for the backend recognizer.
+              Uploading the temporal sign sequence and waiting for the recognizer. The laptop camera stays on.
             </p>
           )}
 
@@ -853,9 +682,9 @@ export function SignLanguageCapture({
                   </div>
                 </div>
                 <div style={neo.statBox}>
-                  <div style={{fontSize: "0.66rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#444444", fontWeight: 900}}>Glasses Speak</div>
+                  <div style={{fontSize: "0.66rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#444444", fontWeight: 900}}>Speech</div>
                   <div style={{marginTop: "0.25rem", fontSize: "0.85rem", fontWeight: 900, color: "#000000"}}>
-                    {displayResult.operation === "capture" ? "n/a" : displayResult.spokeOnGlasses ? "Yes" : "No"}
+                    {displayResult.operation === "capture" ? "n/a" : "Browser"}
                   </div>
                 </div>
               </div>
@@ -1320,8 +1149,7 @@ export function SignLanguageCapture({
       <div style={{marginTop: "0.75rem", display: "flex", gap: "0.5rem"}}>
         <button
           type="button"
-          onClick={() => void handleFeedControlClick()}
-          disabled={feedReconnectBusy}
+          onClick={() => void restart()}
           style={{
             border: "4px solid #000000",
             background: "#FF6600",
@@ -1332,20 +1160,11 @@ export function SignLanguageCapture({
             fontWeight: 900,
             textTransform: "uppercase",
             letterSpacing: "0.12em",
-            cursor: feedReconnectBusy ? "wait" : "pointer",
-            opacity: feedReconnectBusy ? 0.78 : 1,
+            cursor: "pointer",
             boxShadow: "4px 4px 0 #000000",
           }}
         >
-          {feedReconnectBusy
-            ? "Connecting..."
-            : shouldDisplayGlassesSource
-            ? cameraState === "ready"
-              ? "Reconnect Feed"
-              : "Connect Feed"
-            : cameraState === "ready"
-              ? "Restart Camera"
-              : "Enable Camera"}
+          {cameraState === "ready" ? "Restart Camera" : "Enable Camera"}
         </button>
         <button
           type="button"

@@ -348,6 +348,7 @@ export function VocalensCapture() {
       if (buffer.trim()) handleLine(buffer)
 
       if (timings && question && answer) {
+        const timingFields = timings as AskTimings
         await fetch("/api/vocalens/timings", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
@@ -355,7 +356,7 @@ export function VocalensCapture() {
             sessionId: sessionIdRef.current,
             question,
             answer,
-            ...timings,
+            ...timingFields,
             speechStartedAt,
           }),
         }).catch(() => undefined)

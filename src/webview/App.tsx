@@ -67,7 +67,7 @@ const APP_MODE_CONFIG: Record<
     navSubtitle: "OCR to Speech",
     panelTitle: "Written Text To Speech",
     panelDescription:
-      "Press and hold to ask about what the phone camera sees. The answer is spoken here. The glasses button still reads written text aloud.",
+      "Press and hold to ask about what the phone camera sees. The answer is spoken here.",
     emptyTitle: "PRESS AND HOLD",
     emptyHint: "to ask about what the camera sees",
     footerCountLabel: "TEXT TRANSLATIONS",
@@ -78,9 +78,9 @@ const APP_MODE_CONFIG: Record<
     navSubtitle: "ASL to Speech",
     panelTitle: "Live Sign Translation To Speech",
     panelDescription:
-      "Track hands live from the glasses camera, render the sign skeleton overlay, and convert the captured ASL sequence into spoken translated text.",
+      "Track hands live from the laptop camera, render the sign skeleton overlay, and speak the translation in the browser.",
     emptyTitle: "START SIGNING",
-    emptyHint: "with your hands visible to the glasses camera",
+    emptyHint: "with your hands visible to the laptop camera",
     footerCountLabel: "SIGN TRANSLATIONS",
     chipLabel: "LIVE CAMERA",
   },
@@ -298,10 +298,7 @@ function TranslationCard({entry, onRemove}: {entry: TranslationEntry; onRemove: 
           </div>
         </>
       )}
-      <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.4rem", borderTop: "2px solid #000000", paddingTop: "0.4rem"}}>
-        <span style={{fontSize: "0.6rem", color: "#000000", fontWeight: 700}}>
-          {entry.spokeOnGlasses ? "SPOKEN ON GLASSES" : ""}
-        </span>
+      <div style={{display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: "0.4rem", borderTop: "2px solid #000000", paddingTop: "0.4rem"}}>
         <p style={{fontSize: "0.6rem", color: "#444444", textAlign: "right", margin: 0, fontWeight: 700}}>
           {new Date(entry.timestamp).toLocaleTimeString()}
         </p>
@@ -363,7 +360,6 @@ function PrivacyGate({onAccept}: {onAccept: () => void}) {
         <p style={{color: "#000000", fontWeight: 900, marginTop: 0}}>DATA WE PROCESS</p>
         <p>When you use VocaLens, the following data is processed:</p>
         <ul style={{paddingLeft: "1.2rem", margin: "0.5rem 0"}}>
-          <li>Photos captured through your smart glasses</li>
           <li>One frame from the phone camera when you ask a spoken question</li>
           <li>The spoken question, sent for transcription</li>
           <li>Text extracted from those photos via OCR</li>
@@ -432,7 +428,7 @@ function PrivacyGate({onAccept}: {onAccept: () => void}) {
 }
 
 export function App() {
-  const {translations, status, statusMessage, connected, ocrText, error, cameraStream, removeTranslation} =
+  const {translations, status, statusMessage, connected, ocrText, error, removeTranslation} =
     useTranslationStream()
   const [targetLanguage, setTargetLanguage] = useState("English")
   const [showHandednessOverlay, setShowHandednessOverlay] = useState(false)
@@ -524,18 +520,6 @@ export function App() {
       })
       .catch(() => {})
   }, [])
-
-  useEffect(() => {
-    if (!privacyAccepted) {
-      return
-    }
-
-    fetch("/api/settings/sign-camera", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({enabled: activeMode === "sign"}),
-    }).catch(() => {})
-  }, [activeMode, privacyAccepted])
 
   const handleLanguageChange = (lang: string) => {
     setTargetLanguage(lang)
@@ -733,7 +717,6 @@ export function App() {
           gridRows: payload.gridRows,
           gestureHints: payload.gestureHints,
           extractorVersion: payload.extractorVersion,
-          speakOnGlasses: true,
         }),
       })
 
@@ -748,7 +731,6 @@ export function App() {
             englishText?: string
             translatedText?: string
             targetLanguage?: string
-            spokeOnGlasses?: boolean
             model?: string
             message?: string
             rawGeminiOutput?: string
@@ -771,7 +753,6 @@ export function App() {
             englishText?: string
             translatedText?: string
             targetLanguage?: string
-            spokeOnGlasses?: boolean
             model?: string
             message?: string
             rawGeminiOutput?: string
@@ -819,6 +800,11 @@ export function App() {
         }
       }
 
+      const spokenText = (responsePayload?.translatedText || responsePayload?.message || "").trim()
+      if (spokenText) {
+        void speakText(spokenText)
+      }
+
       return {
         operation: "translate",
         success: true,
@@ -830,7 +816,6 @@ export function App() {
         englishText: responsePayload?.englishText,
         translatedText: responsePayload?.translatedText,
         targetLanguage: responsePayload?.targetLanguage,
-        spokeOnGlasses: responsePayload?.spokeOnGlasses,
         model: responsePayload?.model,
         recognizerType: responsePayload?.recognizerType,
         recognizedLabel: responsePayload?.recognizedLabel,
@@ -1217,7 +1202,6 @@ export function App() {
         <div style={{marginBottom: "0.75rem"}}>
           <SignLanguageCapture
             enabled
-            cameraStream={cameraStream}
             latestSignTranslation={latestSignTranslation}
             showHandednessOverlay={showHandednessOverlay}
             captureSettings={signCaptureSettings}

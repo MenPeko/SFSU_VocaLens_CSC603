@@ -3,14 +3,14 @@ import {describe, expect, it} from "bun:test"
 import {compareModelName, textFromOpenAiVisionResponse} from "../../../scripts/vocalens/compare-vision"
 import {buildCompareRow, runModelCompare} from "../../../scripts/vocalens/model-compare"
 import {ERROR_GROUPS, renderErrorGroupSummary} from "../../../scripts/vocalens/vizwiz-summary"
-import {runVizwiz} from "../../../scripts/vocalens/vizwiz-run"
+import {runVizwiz, type VizwizOutputRow} from "../../../scripts/vocalens/vizwiz-run"
 
 const askRoute = readFileSync(new URL("../../../src/api/vocalens-routes.ts", import.meta.url), "utf8")
 
 describe("vizwiz answer cache", () => {
   it("does not call the model again for ids already in the output file", async () => {
     const asked: string[] = []
-    const written: Array<{id: string; errorGroup: string; correct: null; unclearFlag: null; notes: null}> = []
+    const written: VizwizOutputRow[] = []
     const questionsRaw = [
       JSON.stringify({id: "already", image: "already.jpg", question: "What is this?"}),
       JSON.stringify({id: "new-one", image: "new.jpg", question: "What color is it?"}),

@@ -25,21 +25,27 @@ function requiredTimestamp(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
-export function buildTimingRecord(input: Partial<VocalensTimingRecord> & Record<string, unknown>): VocalensTimingRecord {
+type TimingRecordInput = Partial<VocalensTimingRecord> & Record<string, unknown>
+
+export function buildTimingRecord(input: TimingRecordInput | VocalensTimingRecord): VocalensTimingRecord {
+  const source = input as TimingRecordInput
   return {
-    sessionId: typeof input.sessionId === "string" ? input.sessionId : "",
-    question: typeof input.question === "string" ? input.question : "",
-    answer: typeof input.answer === "string" ? input.answer : "",
-    captureAt: optionalTimestamp(input.captureAt),
-    transcriptionStartedAt: requiredTimestamp(input.transcriptionStartedAt),
-    transcriptionEndedAt: requiredTimestamp(input.transcriptionEndedAt),
-    visionStartedAt: requiredTimestamp(input.visionStartedAt),
-    visionEndedAt: requiredTimestamp(input.visionEndedAt),
-    speechStartedAt: optionalTimestamp(input.speechStartedAt),
+    sessionId: typeof source.sessionId === "string" ? source.sessionId : "",
+    question: typeof source.question === "string" ? source.question : "",
+    answer: typeof source.answer === "string" ? source.answer : "",
+    captureAt: optionalTimestamp(source.captureAt),
+    transcriptionStartedAt: requiredTimestamp(source.transcriptionStartedAt),
+    transcriptionEndedAt: requiredTimestamp(source.transcriptionEndedAt),
+    visionStartedAt: requiredTimestamp(source.visionStartedAt),
+    visionEndedAt: requiredTimestamp(source.visionEndedAt),
+    speechStartedAt: optionalTimestamp(source.speechStartedAt),
   }
 }
 
-export async function appendTimingRecord(input: Partial<VocalensTimingRecord> & Record<string, unknown>, path = defaultTimingLogPath()): Promise<VocalensTimingRecord> {
+export async function appendTimingRecord(
+  input: TimingRecordInput | VocalensTimingRecord,
+  path = defaultTimingLogPath(),
+): Promise<VocalensTimingRecord> {
   const record = buildTimingRecord(input)
   await mkdir(dirname(path), {recursive: true})
   await appendFile(path, `${JSON.stringify(record)}\n`, "utf8")

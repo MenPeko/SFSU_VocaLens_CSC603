@@ -1,10 +1,4 @@
 import {useState, useEffect, useRef, useCallback} from "react"
-import type {
-  ActualCaptureQuality,
-  CaptureSettingsFallbackReason,
-  CaptureSettingsStatus,
-  RequestedCaptureQuality,
-} from "../../sign/capture-settings"
 
 export interface TranslationEntry {
   id: string
@@ -18,37 +12,12 @@ export interface TranslationEntry {
   sourceModel?: string
   frameCount?: number
   sequenceFrameCount?: number
-  spokeOnGlasses?: boolean
   recognizerType?: "classifier" | "gemini"
   recognizedLabel?: string
   confidence?: number
   fallbackUsed?: boolean
   classifierModelVersion?: string
   classifierTrainingRunId?: string
-}
-
-export interface CameraStreamState {
-  status: "idle" | "starting" | "initializing" | "preparing" | "active" | "stopping" | "stopped" | "error"
-  transport?: "managed"
-  sessionId?: string
-  userId?: string
-  streamId?: string
-  playbackUrl?: string
-  playbackMimeType?: string
-  hlsUrl?: string
-  dashUrl?: string
-  webrtcUrl?: string
-  previewUrl?: string
-  thumbnailUrl?: string
-  requestedQuality?: RequestedCaptureQuality
-  actualQuality?: ActualCaptureQuality
-  qualityFallback?: boolean
-  actualInputWidth?: number
-  actualInputHeight?: number
-  captureSettingsStatus?: CaptureSettingsStatus
-  captureSettingsFallbackReason?: CaptureSettingsFallbackReason
-  message?: string
-  updatedAt: number
 }
 
 export type AppStatus = "ready" | "capturing" | "extracting" | "translating" | "interpreting" | "disconnected"
@@ -66,7 +35,6 @@ export function useTranslationStream() {
   const [connected, setConnected] = useState(false)
   const [ocrText, setOcrText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [cameraStream, setCameraStream] = useState<CameraStreamState | null>(null)
 
   const eventSourceRef = useRef<EventSource | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -144,7 +112,6 @@ export function useTranslationStream() {
                 sourceModel: data.sourceModel,
                 frameCount: data.frameCount,
                 sequenceFrameCount: data.sequenceFrameCount,
-                spokeOnGlasses: data.spokeOnGlasses,
                 recognizerType: data.recognizerType,
                 recognizedLabel: data.recognizedLabel,
                 confidence: data.confidence,
@@ -154,10 +121,6 @@ export function useTranslationStream() {
               },
               ...prev,
             ].slice(0, 50))
-            break
-
-          case "camera_stream":
-            setCameraStream((data.stream as CameraStreamState | null) ?? null)
             break
 
           case "error":
@@ -199,15 +162,6 @@ export function useTranslationStream() {
   useEffect(() => {
     mountedRef.current = true
 
-    fetch("/api/camera/stream")
-      .then((response) => response.json())
-      .then((data) => {
-        if (mountedRef.current) {
-          setCameraStream(data as CameraStreamState)
-        }
-      })
-      .catch(() => {})
-
     connect()
     return () => {
       mountedRef.current = false
@@ -230,7 +184,6 @@ export function useTranslationStream() {
     connected,
     ocrText,
     error,
-    cameraStream,
     removeTranslation,
     clearTranslations,
   }

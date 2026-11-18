@@ -26,7 +26,13 @@ import {
   gridIntervalMs,
   landmarkIntervalMs,
 } from "../../sign/capture-config"
-import {MEDIAPIPE_EXTRACTOR_VERSION} from "../../sign/extractor-version"
+import {
+  experimentExtractorVersion,
+  isTrackingConfidenceExperiment,
+  parseTrackingConfidenceExperiment,
+} from "../../sign/tracking-confidence-experiment"
+
+export {experimentExtractorVersion, isTrackingConfidenceExperiment, parseTrackingConfidenceExperiment}
 import {LandmarkListSmoother} from "../../sign/one-euro"
 import {appendRollingWindow, computeSequenceDurationMs} from "../../sign/sequence"
 import {
@@ -47,11 +53,6 @@ import type {
   SignLandmarkFrame,
   SignLandmarkPoint,
 } from "../../sign/types"
-const REMOTE_STREAM_READY_TIMEOUT_MS = 20000
-const REMOTE_STREAM_MAX_ATTACH_ATTEMPTS = 6
-const REMOTE_STREAM_RETRY_DELAY_MS = 1500
-const WEBRTC_ICE_GATHERING_TIMEOUT_MS = 5000
-const WEBRTC_STREAM_READY_TIMEOUT_MS = 8000
 
 const FACE_SUBSET_INDICES = {
   leftEyebrow: [70, 63, 105, 66, 107],
@@ -97,24 +98,10 @@ export interface HolisticFrameDrawingData {
   handednessLabels: string[]
 }
 
-export interface RemoteSignPlaybackSource {
-  url: string
-  transport?: "webrtc" | "hls" | "direct"
-  mimeType?: string
+export type SignVideoSource = {
+  type: "device-camera"
+  requestedQuality?: RequestedCaptureQuality
 }
-
-export type SignVideoSource =
-  | {
-      type: "device-camera"
-      requestedQuality?: RequestedCaptureQuality
-    }
-  | {
-      type: "glasses-stream"
-      sources: RemoteSignPlaybackSource[]
-      requestedQuality?: RequestedCaptureQuality
-      actualQuality?: ActualCaptureQuality
-      qualityFallback?: boolean
-    }
 
 export interface SignSequencePayload {
   base64Grid: string
@@ -195,13 +182,6 @@ interface SkeletonRenderOptions {
 
 export function buildVideoSourceKey(videoSource: SignVideoSource): string {
   const requestedQualitySegment = videoSource.requestedQuality ?? "default"
-
-  if (videoSource.type === "glasses-stream") {
-    return `${videoSource.type}:${requestedQualitySegment}:${videoSource.actualQuality ?? "unknown"}:${videoSource.sources
-      .map((source) => `${source.transport ?? "direct"}:${source.url}:${source.mimeType ?? ""}`)
-      .join("|")}`
-  }
-
   return `${videoSource.type}:${requestedQualitySegment}`
 }
 
@@ -319,88 +299,12 @@ function ensureCanvasSize(canvas: HTMLCanvasElement, width: number, height: numb
   }
 }
 
-async function waitForVideoReady(
-  video: HTMLVideoElement,
-  timeoutMs = REMOTE_STREAM_READY_TIMEOUT_MS,
-  timeoutMessage = "Timed out waiting for the Mentra glasses video stream.",
-): Promise<void> {
-  // Require at least one decoded frame (HAVE_CURRENT_DATA) and real dimensions.
-  // HAVE_METADATA only means the container header loaded, which lets the capture
-  // pipeline operate on a black frame while the real video is still buffering.
-  const isReady = () =>
-    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0
-
-  if (isReady()) {
-    return
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => {
-      cleanup()
-      reject(new Error(timeoutMessage))
-    }, timeoutMs)
-
-    const cleanup = () => {
-      window.clearTimeout(timeoutId)
-      video.removeEventListener("loadeddata", handleReady)
-      video.removeEventListener("playing", handleReady)
-      video.removeEventListener("error", handleError)
-    }
-
-    const handleReady = () => {
-      if (!isReady()) {
-        return
-      }
-      cleanup()
-      resolve()
-    }
-
-    const handleError = () => {
-      cleanup()
-      reject(new Error("The selected video source could not be loaded."))
-    }
-
-    video.addEventListener("loadeddata", handleReady)
-    video.addEventListener("playing", handleReady)
-    video.addEventListener("error", handleError)
-  })
-}
-
 function resetVideoElement(video: HTMLVideoElement): void {
   video.pause()
   video.srcObject = null
   video.removeAttribute("src")
   video.load()
 }
-
-async function delay(ms: number): Promise<void> {
-  await new Promise((resolve) => {
-    window.setTimeout(resolve, ms)
-  })
-}
-
-function normalizeRemotePlaybackSource(source: RemoteSignPlaybackSource): RemoteSignPlaybackSource {
-  if (source.transport) {
-    return source
-  }
-
-  if (source.mimeType === "application/vnd.apple.mpegurl" || source.url.includes(".m3u8")) {
-    return {
-      ...source,
-      transport: "hls",
-    }
-  }
-
-  return {
-    ...source,
-    transport: "direct",
-  }
-}
-
-const REMOTE_DRIFT_CHECK_INTERVAL_MS = 1000
-const HLS_DRIFT_SEEK_THRESHOLD_S = 4
-const WEBRTC_DRIFT_SEEK_THRESHOLD_S = 2
-const CAPTURE_DRIFT_SEEK_THRESHOLD_S = 3
 
 const DROPPED_FRAME_STATE_INTERVAL_MS = 250
 const HOLISTIC_TIMING_WINDOW_FRAMES = 60
@@ -449,24 +353,6 @@ function createOverlaySmoothers() {
 
 const TRACKING_CONFIDENCE_EXPERIMENT_STORAGE_KEY = "sign:experiment-tracking-confidence"
 
-// Local-only experiment: overrides HOLISTIC_OPTIONS.minTrackingConfidence for
-// the live hook. Payloads get a distinct extractor stamp so the classifier and
-// trainer reject them instead of mixing them with schema-locked samples.
-export function parseTrackingConfidenceExperiment(value: string | null): number | null {
-  if (value === null || value.trim() === "") {
-    return null
-  }
-
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed > 0 && parsed < 1 ? parsed : null
-}
-
-export function experimentExtractorVersion(trackingConfidence: number | null): string {
-  return trackingConfidence === null
-    ? MEDIAPIPE_EXTRACTOR_VERSION
-    : `${MEDIAPIPE_EXTRACTOR_VERSION}+exp-tracking-${trackingConfidence}`
-}
-
 function readTrackingConfidenceExperiment(): number | null {
   try {
     return parseTrackingConfidenceExperiment(window.localStorage.getItem(TRACKING_CONFIDENCE_EXPERIMENT_STORAGE_KEY))
@@ -481,393 +367,6 @@ function isSignTimingDebugEnabled(): boolean {
   } catch {
     return false
   }
-}
-
-function clearRemoteDriftInterval(ref: {current: number | null}): void {
-  if (ref.current !== null) {
-    window.clearInterval(ref.current)
-    ref.current = null
-  }
-}
-
-// Cloudflare Stream supports Low-Latency HLS only when the manifest URL opts in
-// via `?protocol=llhls`. Standard HLS has ~10-15s latency; LL-HLS is ~2-6s. We
-// rewrite URLs here rather than in the backend because the same helper works for
-// both `playbackUrl` and `hlsUrl`, and for the videodelivery.net fallback path.
-function maybeUpgradeToCloudflareLlHls(url: string): string {
-  try {
-    const parsed = new URL(url)
-    const isCloudflareStream =
-      /(^|\.)cloudflarestream\.com$/.test(parsed.hostname) || parsed.hostname === "videodelivery.net"
-    if (!isCloudflareStream) {
-      return url
-    }
-    if (!parsed.searchParams.has("protocol")) {
-      parsed.searchParams.set("protocol", "llhls")
-    }
-    return parsed.toString()
-  } catch {
-    return url
-  }
-}
-
-function parseIceServers(linkHeader: string | null): RTCIceServer[] {
-  if (!linkHeader) {
-    return []
-  }
-
-  const iceServers: RTCIceServer[] = []
-  const entries = linkHeader.split(/,(?=\s*<)/)
-
-  for (const entry of entries) {
-    const segments = entry
-      .split(";")
-      .map((segment) => segment.trim())
-      .filter(Boolean)
-    const rawUrl = segments[0]
-    if (!rawUrl?.startsWith("<") || !rawUrl.endsWith(">")) {
-      continue
-    }
-
-    const params = new Map<string, string>()
-    for (const segment of segments.slice(1)) {
-      const [key, ...valueParts] = segment.split("=")
-      if (!key || valueParts.length === 0) {
-        continue
-      }
-
-      params.set(key.trim().toLowerCase(), valueParts.join("=").replace(/^"(.*)"$/, "$1"))
-    }
-
-    if (params.get("rel") !== "ice-server") {
-      continue
-    }
-
-    iceServers.push({
-      urls: rawUrl.slice(1, -1),
-      username: params.get("username"),
-      credential: params.get("credential"),
-    })
-  }
-
-  return iceServers
-}
-
-async function discoverIceServersForWebRtc(sourceUrl: string): Promise<RTCIceServer[]> {
-  try {
-    const response = await fetch(sourceUrl, {
-      method: "OPTIONS",
-    })
-
-    if (!response.ok) {
-      return []
-    }
-
-    return parseIceServers(response.headers.get("Link"))
-  } catch {
-    return []
-  }
-}
-
-async function waitForIceGatheringComplete(peerConnection: RTCPeerConnection): Promise<void> {
-  if (peerConnection.iceGatheringState === "complete") {
-    return
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => {
-      cleanup()
-      reject(new Error("Timed out preparing the low-latency glasses stream."))
-    }, WEBRTC_ICE_GATHERING_TIMEOUT_MS)
-
-    const cleanup = () => {
-      window.clearTimeout(timeoutId)
-      peerConnection.removeEventListener("icegatheringstatechange", handleChange)
-    }
-
-    const handleChange = () => {
-      if (peerConnection.iceGatheringState !== "complete") {
-        return
-      }
-
-      cleanup()
-      resolve()
-    }
-
-    peerConnection.addEventListener("icegatheringstatechange", handleChange)
-  })
-}
-
-function destroyPeerConnection(
-  peerConnectionRef: {current: RTCPeerConnection | null},
-  remoteSessionUrlRef: {current: string | null},
-  remoteDriftIntervalRef?: {current: number | null},
-): void {
-  if (remoteDriftIntervalRef) {
-    clearRemoteDriftInterval(remoteDriftIntervalRef)
-  }
-
-  const peerConnection = peerConnectionRef.current
-  peerConnectionRef.current = null
-
-  for (const receiver of peerConnection?.getReceivers() ?? []) {
-    receiver.track?.stop()
-  }
-
-  try {
-    peerConnection?.close()
-  } catch {
-    // Ignore close errors when the connection is already shutting down.
-  }
-
-  const sessionUrl = remoteSessionUrlRef.current
-  remoteSessionUrlRef.current = null
-
-  if (!sessionUrl) {
-    return
-  }
-
-  void fetch(sessionUrl, {
-    method: "DELETE",
-    keepalive: true,
-  }).catch(() => {
-    // Session teardown is best-effort for demo playback.
-  })
-}
-
-async function attachWebRtcVideoSource(
-  video: HTMLVideoElement,
-  sourceUrl: string,
-  peerConnectionRef: {current: RTCPeerConnection | null},
-  remoteSessionUrlRef: {current: string | null},
-  remoteDriftIntervalRef: {current: number | null},
-): Promise<void> {
-  if (typeof RTCPeerConnection === "undefined") {
-    throw new Error("This browser cannot open the low-latency Mentra glasses stream.")
-  }
-
-  destroyPeerConnection(peerConnectionRef, remoteSessionUrlRef, remoteDriftIntervalRef)
-
-  const iceServers = await discoverIceServersForWebRtc(sourceUrl)
-  const peerConnection = new RTCPeerConnection(iceServers.length > 0 ? {iceServers} : undefined)
-  peerConnectionRef.current = peerConnection
-
-  const remoteStream = new MediaStream()
-  video.srcObject = remoteStream
-
-  peerConnection.addTransceiver("video", {direction: "recvonly"})
-  peerConnection.addTransceiver("audio", {direction: "recvonly"})
-  peerConnection.ontrack = (event) => {
-    if (event.streams[0]) {
-      video.srcObject = event.streams[0]
-      return
-    }
-
-    remoteStream.addTrack(event.track)
-  }
-
-  const offer = await peerConnection.createOffer()
-  await peerConnection.setLocalDescription(offer)
-  await waitForIceGatheringComplete(peerConnection)
-
-  const offerSdp = peerConnection.localDescription?.sdp
-  if (!offerSdp) {
-    throw new Error("Could not prepare the low-latency glasses stream.")
-  }
-
-  const response = await fetch(sourceUrl, {
-    method: "POST",
-    headers: {
-      Accept: "application/sdp",
-      "Content-Type": "application/sdp",
-    },
-    body: offerSdp,
-  })
-
-  if (!response.ok) {
-    throw new Error(`Glasses WebRTC playback failed (${response.status})`)
-  }
-
-  const sessionLocation = response.headers.get("Location")
-  if (sessionLocation) {
-    remoteSessionUrlRef.current = new URL(sessionLocation, sourceUrl).toString()
-  }
-
-  const answerSdp = await response.text()
-  await peerConnection.setRemoteDescription({
-    type: "answer",
-    sdp: answerSdp,
-  })
-  await waitForVideoReady(video, WEBRTC_STREAM_READY_TIMEOUT_MS, "Timed out starting the low-latency glasses stream.")
-
-  // WebRTC has no manifest, so use the end of the most recent buffered range as
-  // the "live edge" and snap the playhead forward when drift accumulates.
-  clearRemoteDriftInterval(remoteDriftIntervalRef)
-  remoteDriftIntervalRef.current = window.setInterval(() => {
-    if (video.buffered.length === 0) {
-      return
-    }
-    const liveEdge = video.buffered.end(video.buffered.length - 1)
-    if (liveEdge - video.currentTime > WEBRTC_DRIFT_SEEK_THRESHOLD_S) {
-      video.currentTime = liveEdge
-    }
-  }, REMOTE_DRIFT_CHECK_INTERVAL_MS)
-}
-
-async function attachRemoteVideoSource(
-  video: HTMLVideoElement,
-  source: RemoteSignPlaybackSource,
-  hlsRef: {current: {destroy: () => void} | null},
-  peerConnectionRef: {current: RTCPeerConnection | null},
-  remoteSessionUrlRef: {current: string | null},
-  remoteDriftIntervalRef: {current: number | null},
-): Promise<void> {
-  video.crossOrigin = "anonymous"
-
-  const normalizedSource = normalizeRemotePlaybackSource(source)
-  if (normalizedSource.transport === "webrtc") {
-    await attachWebRtcVideoSource(video, normalizedSource.url, peerConnectionRef, remoteSessionUrlRef, remoteDriftIntervalRef)
-    return
-  }
-
-  const looksLikeHls = normalizedSource.transport === "hls"
-  const sourceUrl = looksLikeHls ? maybeUpgradeToCloudflareLlHls(normalizedSource.url) : normalizedSource.url
-  if (!looksLikeHls) {
-    video.src = sourceUrl
-    await waitForVideoReady(video)
-    return
-  }
-
-  if (video.canPlayType("application/vnd.apple.mpegurl")) {
-    try {
-      video.src = sourceUrl
-      await waitForVideoReady(video)
-      return
-    } catch {
-      resetVideoElement(video)
-    }
-  }
-
-  const HlsModule = await import("hls.js")
-  const Hls = HlsModule.default
-
-  if (!Hls.isSupported()) {
-    throw new Error("This browser cannot play the Mentra glasses HLS stream.")
-  }
-
-  const hls = new Hls({
-    lowLatencyMode: true,
-    backBufferLength: 4,
-    liveSyncDurationCount: 1,
-    liveMaxLatencyDurationCount: 5,
-    maxLiveSyncPlaybackRate: 1.5,
-    maxBufferHole: 0.5,
-    maxFragLookUpTolerance: 0.2,
-  })
-
-  hlsRef.current = hls
-
-  await new Promise<void>((resolve, reject) => {
-    const handleManifestParsed = () => {
-      cleanup()
-      resolve()
-    }
-
-    const handleError = (_event: string, data: {fatal?: boolean; details?: string}) => {
-      if (!data?.fatal) {
-        return
-      }
-
-      cleanup()
-      reject(new Error(data.details ? `Glasses stream playback failed: ${data.details}` : "Glasses stream playback failed."))
-    }
-
-    const cleanup = () => {
-      hls.off(Hls.Events.MANIFEST_PARSED, handleManifestParsed)
-      hls.off(Hls.Events.ERROR, handleError)
-    }
-
-    hls.on(Hls.Events.MANIFEST_PARSED, handleManifestParsed)
-    hls.on(Hls.Events.ERROR, handleError)
-    hls.loadSource(sourceUrl)
-    hls.attachMedia(video)
-  })
-
-  await waitForVideoReady(video)
-
-  // Drift watchdog: if hls.js falls more than HLS_DRIFT_SEEK_THRESHOLD_S behind
-  // the live edge, snap the playhead forward so captured frames reflect the
-  // current moment rather than a stale point in the DVR window.
-  clearRemoteDriftInterval(remoteDriftIntervalRef)
-  remoteDriftIntervalRef.current = window.setInterval(() => {
-    const liveEdge = hls.liveSyncPosition
-    if (typeof liveEdge !== "number" || !Number.isFinite(liveEdge)) {
-      return
-    }
-    if (liveEdge - video.currentTime > HLS_DRIFT_SEEK_THRESHOLD_S) {
-      video.currentTime = liveEdge
-    }
-  }, REMOTE_DRIFT_CHECK_INTERVAL_MS)
-}
-
-async function attachRemoteVideoSourceWithRetry(
-  video: HTMLVideoElement,
-  sources: RemoteSignPlaybackSource[],
-  hlsRef: {current: {destroy: () => void} | null},
-  peerConnectionRef: {current: RTCPeerConnection | null},
-  remoteSessionUrlRef: {current: string | null},
-  remoteDriftIntervalRef: {current: number | null},
-): Promise<void> {
-  const candidateSources = sources
-    .map((source) => ({
-      ...normalizeRemotePlaybackSource(source),
-      url: source.url.trim(),
-    }))
-    .filter((source) => source.url.length > 0)
-    .filter(
-      (source, index, values) =>
-        values.findIndex((candidate) => candidate.url === source.url && candidate.transport === source.transport) === index,
-    )
-  let lastError: unknown = null
-
-  for (let attempt = 1; attempt <= REMOTE_STREAM_MAX_ATTACH_ATTEMPTS; attempt += 1) {
-    for (const candidateSource of candidateSources) {
-      try {
-        clearRemoteDriftInterval(remoteDriftIntervalRef)
-
-        if (hlsRef.current) {
-          hlsRef.current.destroy()
-          hlsRef.current = null
-        }
-
-        destroyPeerConnection(peerConnectionRef, remoteSessionUrlRef, remoteDriftIntervalRef)
-        resetVideoElement(video)
-        await attachRemoteVideoSource(
-          video,
-          candidateSource,
-          hlsRef,
-          peerConnectionRef,
-          remoteSessionUrlRef,
-          remoteDriftIntervalRef,
-        )
-        return
-      } catch (error) {
-        lastError = error
-      }
-    }
-
-    if (attempt === REMOTE_STREAM_MAX_ATTACH_ATTEMPTS) {
-      break
-    }
-
-    await delay(REMOTE_STREAM_RETRY_DELAY_MS)
-  }
-
-  if (lastError instanceof Error) {
-    throw lastError
-  }
-
-  throw new Error("The Mentra glasses stream could not be attached.")
 }
 
 function formatGestureHintName(name: string): string {
@@ -1470,22 +969,13 @@ export function useSignLanguage({
   const [latestSequence, setLatestSequence] = useState<SignSequencePayload | null>(null)
   const [actualInputWidth, setActualInputWidth] = useState<number | undefined>(undefined)
   const [actualInputHeight, setActualInputHeight] = useState<number | undefined>(undefined)
-  const [actualQuality, setActualQuality] = useState<ActualCaptureQuality | undefined>(
-    videoSource.type === "glasses-stream" ? videoSource.actualQuality : undefined,
-  )
-  const [qualityFallback, setQualityFallback] = useState<boolean | undefined>(
-    videoSource.type === "glasses-stream" ? videoSource.qualityFallback : undefined,
-  )
+  const [actualQuality, setActualQuality] = useState<ActualCaptureQuality | undefined>(undefined)
+  const [qualityFallback, setQualityFallback] = useState<boolean | undefined>(undefined)
   const [droppedFrameCount, setDroppedFrameCount] = useState(0)
 
   const mountedRef = useRef(true)
   const runIdRef = useRef(0)
   const streamRef = useRef<MediaStream | null>(null)
-  const hlsRef = useRef<{destroy: () => void} | null>(null)
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
-  const remoteSessionUrlRef = useRef<string | null>(null)
-  const remoteDriftIntervalRef = useRef<number | null>(null)
-  const usingRemoteStreamRef = useRef(false)
   const holisticRef = useRef<Holistic | null>(null)
   const animationFrameRef = useRef<number | null>(null)
   const videoFrameCallbackRef = useRef<{video: HTMLVideoElement; handle: number} | null>(null)
@@ -1621,13 +1111,8 @@ export function useSignLanguage({
         : undefined
     const requestedQuality = videoSource.requestedQuality
     const actualQualityForPayload =
-      videoSource.type === "glasses-stream"
-        ? videoSource.actualQuality || actualQuality || deriveActualCaptureQuality(actualInputWidthRef.current, actualInputHeightRef.current)
-        : actualQuality || deriveActualCaptureQuality(actualInputWidthRef.current, actualInputHeightRef.current)
-    const qualityFallbackForPayload =
-      videoSource.type === "glasses-stream"
-        ? videoSource.qualityFallback ?? qualityFallback ?? inferQualityFallback(requestedQuality, actualQualityForPayload)
-        : qualityFallback ?? inferQualityFallback(requestedQuality, actualQualityForPayload)
+      actualQuality || deriveActualCaptureQuality(actualInputWidthRef.current, actualInputHeightRef.current)
+    const qualityFallbackForPayload = qualityFallback ?? inferQualityFallback(requestedQuality, actualQualityForPayload)
 
     return {
       base64Grid: dataUrl.split(",")[1] ?? "",
@@ -1684,16 +1169,6 @@ export function useSignLanguage({
       streamRef.current = null
     }
 
-    clearRemoteDriftInterval(remoteDriftIntervalRef)
-
-    if (hlsRef.current) {
-      hlsRef.current.destroy()
-      hlsRef.current = null
-    }
-
-    destroyPeerConnection(peerConnectionRef, remoteSessionUrlRef, remoteDriftIntervalRef)
-    usingRemoteStreamRef.current = false
-
     const video = videoRef.current
     if (video) {
       resetVideoElement(video)
@@ -1722,16 +1197,7 @@ export function useSignLanguage({
       return
     }
 
-    const remoteSources =
-      videoSource.type === "glasses-stream"
-        ? videoSource.sources.map((source) => ({
-            ...source,
-            url: source.url.trim(),
-          }))
-        : []
-    const usingRemoteStream = videoSource.type === "glasses-stream" && remoteSources.some((source) => source.url.length > 0)
-
-    if (!usingRemoteStream && !navigator.mediaDevices?.getUserMedia) {
+    if (!navigator.mediaDevices?.getUserMedia) {
       setCameraState("error")
       setError("This browser does not support camera access.")
       return
@@ -1759,48 +1225,34 @@ export function useSignLanguage({
     actualInputHeightRef.current = undefined
     setActualInputWidth(undefined)
     setActualInputHeight(undefined)
-    setActualQuality(videoSource.type === "glasses-stream" ? videoSource.actualQuality : undefined)
-    setQualityFallback(videoSource.type === "glasses-stream" ? videoSource.qualityFallback : undefined)
+    setActualQuality(undefined)
+    setQualityFallback(undefined)
     clearSequence()
     redrawGridCanvas()
-
-    usingRemoteStreamRef.current = usingRemoteStream
 
     try {
       video.muted = true
       video.playsInline = true
 
-      if (usingRemoteStream) {
-        await attachRemoteVideoSourceWithRetry(
-          video,
-          remoteSources,
-          hlsRef,
-          peerConnectionRef,
-          remoteSessionUrlRef,
-          remoteDriftIntervalRef,
-        )
-        streamRef.current = video.srcObject instanceof MediaStream ? video.srcObject : null
-      } else {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            facingMode: "user",
-            width: {ideal: videoSource.requestedQuality === "1080p" ? 1920 : 1280},
-            height: {ideal: videoSource.requestedQuality === "1080p" ? 1080 : 720},
-            frameRate: {ideal: 30},
-          },
-        })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: "user",
+          width: {ideal: videoSource.requestedQuality === "1080p" ? 1920 : 1280},
+          height: {ideal: videoSource.requestedQuality === "1080p" ? 1080 : 720},
+          frameRate: {ideal: 30},
+        },
+      })
 
-        if (runId !== runIdRef.current) {
-          for (const track of stream.getTracks()) {
-            track.stop()
-          }
-          return
+      if (runId !== runIdRef.current) {
+        for (const track of stream.getTracks()) {
+          track.stop()
         }
-
-        streamRef.current = stream
-        video.srcObject = stream
+        return
       }
+
+      streamRef.current = stream
+      video.srcObject = stream
 
       if (runId !== runIdRef.current) {
         return
@@ -1812,16 +1264,9 @@ export function useSignLanguage({
       actualInputHeightRef.current = video.videoHeight || undefined
       setActualInputWidth(actualInputWidthRef.current)
       setActualInputHeight(actualInputHeightRef.current)
-      const deliveredQuality =
-        videoSource.type === "glasses-stream"
-          ? videoSource.actualQuality || deriveActualCaptureQuality(actualInputWidthRef.current, actualInputHeightRef.current)
-          : deriveActualCaptureQuality(actualInputWidthRef.current, actualInputHeightRef.current)
+      const deliveredQuality = deriveActualCaptureQuality(actualInputWidthRef.current, actualInputHeightRef.current)
       setActualQuality(deliveredQuality)
-      setQualityFallback(
-        videoSource.type === "glasses-stream"
-          ? videoSource.qualityFallback ?? inferQualityFallback(videoSource.requestedQuality, deliveredQuality)
-          : inferQualityFallback(videoSource.requestedQuality, deliveredQuality),
-      )
+      setQualityFallback(inferQualityFallback(videoSource.requestedQuality, deliveredQuality))
 
       ensureCanvasSize(overlayCanvas, video.videoWidth || 1280, video.videoHeight || 720)
       redrawGridCanvas()
@@ -1940,35 +1385,6 @@ export function useSignLanguage({
             }
 
             if (landmarkReady || gridReady) {
-              // Freshness gate: when consuming a remote glasses stream, skip
-              // capture ticks whose current frame is stale beyond
-              // CAPTURE_DRIFT_SEEK_THRESHOLD_S. Snap the playhead to the live
-              // edge so the next RAF lands on a fresh frame, guaranteeing the
-              // labeled grid never contains pre-drift content.
-              if (usingRemoteStreamRef.current) {
-                const hlsInstance = hlsRef.current as
-                  | {destroy: () => void; liveSyncPosition?: number}
-                  | null
-                let liveEdge: number | undefined
-                if (
-                  hlsInstance &&
-                  typeof hlsInstance.liveSyncPosition === "number" &&
-                  Number.isFinite(hlsInstance.liveSyncPosition)
-                ) {
-                  liveEdge = hlsInstance.liveSyncPosition
-                } else if (video.buffered.length > 0) {
-                  liveEdge = video.buffered.end(video.buffered.length - 1)
-                }
-                if (
-                  typeof liveEdge === "number" &&
-                  Number.isFinite(liveEdge) &&
-                  liveEdge - video.currentTime > CAPTURE_DRIFT_SEEK_THRESHOLD_S
-                ) {
-                  video.currentTime = liveEdge
-                  return
-                }
-              }
-
               if (gridReady) {
                 lastGridCaptureAtRef.current = now
 
@@ -2110,28 +1526,13 @@ export function useSignLanguage({
       }
 
       setCameraState("error")
-      setError(
-        cameraError instanceof Error
-          ? cameraError.message
-          : usingRemoteStream
-            ? "Could not open the Mentra glasses video stream."
-            : "Could not access the camera.",
-      )
+      setError(cameraError instanceof Error ? cameraError.message : "Could not access the camera.")
     }
   }
 
   useEffect(() => {
     showHandednessOverlayRef.current = showHandednessOverlay
   }, [showHandednessOverlay])
-
-  useEffect(() => {
-    if (videoSource.type !== "glasses-stream") {
-      return
-    }
-
-    setActualQuality(videoSource.actualQuality)
-    setQualityFallback(videoSource.qualityFallback)
-  }, [videoSource])
 
   useEffect(() => {
     mountedRef.current = true

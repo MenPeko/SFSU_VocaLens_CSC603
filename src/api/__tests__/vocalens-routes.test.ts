@@ -1,4 +1,5 @@
 import {beforeEach, describe, expect, it} from "bun:test"
+import {routes} from "../routes"
 import {handleVocalensAsk, resolveAskFrame} from "../vocalens-routes"
 import {clearAllVocalensSessions, getVocalensSession} from "../../services/vocalens-session"
 import type {VocalensTurn} from "../../services/vocalens-session"
@@ -72,5 +73,39 @@ describe("vocalens ask route", () => {
     expect(seenTurns[1][2]).toEqual({role: "user", text: "what color is it"})
     expect(followUpEvents.at(-1)?.answer).toBe("It is red.")
     expect(getVocalensSession(sessionId, 5_000)?.image.toString()).toBe("stored-frame")
+  })
+
+  it("asks for the answer in the selected language", async () => {
+    await routes["/api/settings/language"].POST(
+      new Request("http://localhost/api/settings/language", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({targetLanguage: "Spanish"}),
+      }),
+    )
+    let seenLanguage = ""
+    const deps = {
+      now: () => 5_000,
+      transcribe: async () => ({text: "what is this item", provider: "openai" as const}),
+      streamAnswer: async function* (_image: Buffer, _mimeType: string, _turns: VocalensTurn[], targetLanguage: string) {
+        seenLanguage = targetLanguage
+        yield "Una lata roja."
+      },
+    }
+
+    const response = await handleVocalensAsk(askRequest(false, Buffer.from("frame")), deps)
+    const events = await readEvents(response)
+
+    expect(seenLanguage).toBe("Spanish")
+    expect(events.find((event) => event.type === "sentence")?.targetLanguage).toBe("Spanish")
+    expect(events.at(-1)?.targetLanguage).toBe("Spanish")
+
+    await routes["/api/settings/language"].POST(
+      new Request("http://localhost/api/settings/language", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({targetLanguage: "English"}),
+      }),
+    )
   })
 })

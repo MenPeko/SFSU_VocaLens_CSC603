@@ -17,6 +17,11 @@ export const VQA_PROMPT = [
   "Do not guess.",
 ].join(" ")
 
+export function answerLanguageInstruction(targetLanguage: string): string {
+  const language = targetLanguage.trim() || "English"
+  return `Write the answer in ${language}, even when the question is in another language. Quote visible text exactly as printed.`
+}
+
 interface GeminiContentPart {
   text?: string
   inline_data?: {
@@ -35,7 +40,9 @@ export function buildVisualQuestionContents(
   imageBase64: string,
   mimeType: string,
   turns: VocalensTurn[],
+  targetLanguage = "English",
 ): {contents: GeminiContent[]} {
+  const languageLine = answerLanguageInstruction(targetLanguage)
   let attachedImage = false
   const contents = turns.map((turn) => {
     if (turn.role === "model") {
@@ -47,7 +54,7 @@ export function buildVisualQuestionContents(
       return {
         role: "user" as const,
         parts: [
-          {text: `${prompt}\n\nQuestion: ${turn.text}`},
+          {text: `${prompt} ${languageLine}\n\nQuestion: ${turn.text}`},
           {
             inline_data: {
               mime_type: mimeType || "image/jpeg",
@@ -58,7 +65,7 @@ export function buildVisualQuestionContents(
       }
     }
 
-    return {role: "user" as const, parts: [{text: `Question: ${turn.text}`}]}
+    return {role: "user" as const, parts: [{text: `${languageLine}\n\nQuestion: ${turn.text}`}]}
   })
 
   return {contents}
@@ -69,8 +76,9 @@ export function buildVisualQuestionBody(
   imageBase64: string,
   mimeType: string,
   turns: VocalensTurn[],
+  targetLanguage = "English",
 ): string {
-  return JSON.stringify(buildVisualQuestionContents(prompt, imageBase64, mimeType, turns))
+  return JSON.stringify(buildVisualQuestionContents(prompt, imageBase64, mimeType, turns, targetLanguage))
 }
 
 export function buildGeminiStreamUrl(apiKey: string, model: string): string {
@@ -132,14 +140,20 @@ export async function* readGeminiSseDeltas(response: Response): AsyncGenerator<s
   if (tail) yield tail
 }
 
-async function openVisualAnswerResponse(image: Buffer, mimeType: string, turns: VocalensTurn[]): Promise<Response> {
+async function openVisualAnswerResponse(
+  image: Buffer,
+  mimeType: string,
+  turns: VocalensTurn[],
+  targetLanguage = "English",
+): Promise<Response> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not set")
   }
 
   const configuredModel = process.env.GEMINI_MODEL || "gemini-2.5-flash"
-  const body = buildVisualQuestionBody(VQA_PROMPT, image.toString("base64"), mimeType, turns)
+  const language = targetLanguage.trim() || "English"
+  const body = buildVisualQuestionBody(VQA_PROMPT, image.toString("base64"), mimeType, turns, language)
   let modelsToTry = deduplicateModels(configuredModel)
   let attemptedModelDiscovery = false
   let lastError = "Gemini visual question request failed"
@@ -193,8 +207,9 @@ export async function* streamVisualAnswer(
   image: Buffer,
   mimeType: string,
   turns: VocalensTurn[],
+  targetLanguage = "English",
 ): AsyncGenerator<string> {
-  const response = await openVisualAnswerResponse(image, mimeType, turns)
+  const response = await openVisualAnswerResponse(image, mimeType, turns, targetLanguage)
   yield* readGeminiSseDeltas(response)
 }
 
@@ -203,10 +218,11 @@ export async function answerVisualQuestion(
   mimeType: string,
   question: string,
   priorTurns: VocalensTurn[] = [],
+  targetLanguage = "English",
 ): Promise<string> {
   const turns: VocalensTurn[] = [...priorTurns, {role: "user", text: question}]
   let full = ""
-  for await (const chunk of streamVisualAnswer(image, mimeType, turns)) {
+  for await (const chunk of streamVisualAnswer(image, mimeType, turns, targetLanguage)) {
     full = mergeGeminiStreamChunk(full, chunk)
   }
   return full.trim()

@@ -17,13 +17,13 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{8,80}$/
 
 export interface VocalensAskDeps {
   transcribe: (audio: Buffer, mimeType: string) => Promise<TranscriptionResult>
-  streamAnswer: (image: Buffer, mimeType: string, turns: VocalensTurn[]) => AsyncIterable<string>
+  streamAnswer: (image: Buffer, mimeType: string, turns: VocalensTurn[], targetLanguage: string) => AsyncIterable<string>
   now: () => number
 }
 
 const defaultDeps: VocalensAskDeps = {
   transcribe: (audio, mimeType) => transcribeAudio(audio, mimeType),
-  streamAnswer: (image, mimeType, turns) => streamVisualAnswer(image, mimeType, turns),
+  streamAnswer: (image, mimeType, turns, targetLanguage) => streamVisualAnswer(image, mimeType, turns, targetLanguage),
   now: () => Date.now(),
 }
 
@@ -116,6 +116,8 @@ export async function handleVocalensAsk(req: Request, deps: VocalensAskDeps = de
     async start(controller) {
       const transcriptionStartedAt = deps.now()
       try {
+        const {getTargetLanguage} = await import("./routes")
+        const storedLanguage = getTargetLanguage()
         writeEvent(controller, encoder, {type: "frame_stored", followUp})
         const transcript = await deps.transcribe(audio.bytes, audio.mimeType)
         const question = transcript.text.trim()
@@ -133,17 +135,21 @@ export async function handleVocalensAsk(req: Request, deps: VocalensAskDeps = de
         const visionStartedAt = deps.now()
         let accumulated = ""
         let emittedSentences = 0
-        for await (const chunk of deps.streamAnswer(session.image, session.mimeType, turns)) {
+        for await (const chunk of deps.streamAnswer(session.image, session.mimeType, turns, storedLanguage)) {
           accumulated = mergeGeminiStreamChunk(accumulated, chunk)
           const spoken = takeCompleteSentences(accumulated)
           while (emittedSentences < spoken.sentences.length) {
-            writeEvent(controller, encoder, {type: "sentence", text: spoken.sentences[emittedSentences]})
+            writeEvent(controller, encoder, {
+              type: "sentence",
+              text: spoken.sentences[emittedSentences],
+              targetLanguage: storedLanguage,
+            })
             emittedSentences += 1
           }
         }
         const remainder = takeCompleteSentences(accumulated).rest.trim()
         if (remainder) {
-          writeEvent(controller, encoder, {type: "sentence", text: remainder})
+          writeEvent(controller, encoder, {type: "sentence", text: remainder, targetLanguage: storedLanguage})
         }
 
         const answer = accumulated.trim()
@@ -172,7 +178,7 @@ export async function handleVocalensAsk(req: Request, deps: VocalensAskDeps = de
           originalText: question,
           translatedText: answer,
           detectedLanguage: "English",
-          targetLanguage: "English",
+          targetLanguage: storedLanguage,
           timestamp: deps.now(),
           sourceType: "vocalens",
           sourceLabel: "Spoken question",
@@ -182,6 +188,7 @@ export async function handleVocalensAsk(req: Request, deps: VocalensAskDeps = de
           type: "done",
           question,
           answer,
+          targetLanguage: storedLanguage,
           provider: transcript.provider,
           timings,
         })

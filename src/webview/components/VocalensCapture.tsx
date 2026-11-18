@@ -24,6 +24,7 @@ interface AskEvent {
   message?: string
   question?: string
   answer?: string
+  targetLanguage?: string
   timings?: AskTimings
 }
 
@@ -323,7 +324,7 @@ export function VocalensCapture() {
           answer = answer ? `${answer} ${event.text}` : event.text
           setAnswerText(answer)
           setStatusText("Speaking the answer.")
-          void speakText(event.text)
+          void speakText(event.text, undefined, event.targetLanguage)
         }
         if (event.type === "done") {
           question = event.question || question

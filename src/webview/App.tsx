@@ -246,7 +246,7 @@ function TranslationCard({entry, onRemove}: {entry: TranslationEntry; onRemove: 
             type="button"
             aria-label="Replay answer"
             onClick={() => {
-              void speakText(translatedText)
+              void speakText(translatedText, undefined, typeof entry.targetLanguage === "string" ? entry.targetLanguage : undefined)
             }}
             style={{
               marginTop: "0.65rem",
@@ -802,7 +802,7 @@ export function App() {
 
       const spokenText = (responsePayload?.translatedText || responsePayload?.message || "").trim()
       if (spokenText) {
-        void speakText(spokenText)
+        void speakText(spokenText, undefined, responsePayload?.targetLanguage)
       }
 
       return {

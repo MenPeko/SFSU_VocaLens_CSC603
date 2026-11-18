@@ -548,6 +548,7 @@ class LandmarkSequenceClassifier:
         )
         self.prefer_active_model_pointer = prefer_active_model_pointer
         self.samples: list[SampleVector] = []
+        self._samples_loaded = False
         self.trained_model: Optional[TrainedSequenceModel] = None
         self.active_model_pointer: Optional[ActiveModelPointer] = None
         self.loaded_model_path: Optional[Path] = None
@@ -563,6 +564,7 @@ class LandmarkSequenceClassifier:
             )
             for example in load_training_examples(self.data_dir)
         ]
+        self._samples_loaded = True
 
     def _candidate_model_paths(self) -> list[Path]:
         candidates: list[Path] = []
@@ -616,7 +618,8 @@ class LandmarkSequenceClassifier:
             break
 
     def reload_runtime_assets(self, force: bool = False) -> None:
-        self.reload_samples()
+        if force or not self._samples_loaded:
+            self.reload_samples()
         self.reload_trained_model(force=force)
 
     def runtime_summary(self) -> dict[str, Any]:

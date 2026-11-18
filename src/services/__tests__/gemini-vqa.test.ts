@@ -38,6 +38,27 @@ describe("visual question prompt", () => {
     expect(body.contents[2].parts[0].text).toContain("What about the date?")
   })
 
+  it("asks for the selected language on the first question and on follow-ups", () => {
+    const body = JSON.parse(
+      buildVisualQuestionBody(
+        "Prompt",
+        "abc123",
+        "image/jpeg",
+        [
+          {role: "user", text: "What is this?"},
+          {role: "model", text: "A can."},
+          {role: "user", text: "What color is it?"},
+        ],
+        "Spanish",
+      ),
+    ) as {contents: Array<{parts: Array<{text?: string}>}>}
+
+    expect(body.contents[0].parts[0].text).toContain("Write the answer in Spanish")
+    expect(body.contents[0].parts[0].text).toContain("What is this?")
+    expect(body.contents[2].parts[0].text).toContain("Write the answer in Spanish")
+    expect(body.contents[2].parts[0].text).toContain("What color is it?")
+  })
+
   it("treats a repeated stream prefix as the full answer so far", () => {
     expect(mergeGeminiStreamChunk("Milk", "Milk is in the cup.")).toBe("Milk is in the cup.")
     expect(mergeGeminiStreamChunk("Milk", " is fresh.")).toBe("Milk is fresh.")
